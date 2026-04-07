@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Codex App Server Minimal Web</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <div class="shell">
+      <aside class="sidebar">
+        <div class="panel panel-brand">
+          <p class="eyebrow">Minimal bridge</p>
+          <h1>Codex App Server</h1>
+          <p class="lede">
+            Browser UI on top of a local Node bridge. The bridge spawns
+            <code>codex app-server</code> and streams its events into this page.
+          </p>
+        </div>
+
+        <div class="panel">
+          <div class="panel-head">
+            <h2>Session</h2>
+            <button id="new-thread" class="ghost">New thread</button>
+          </div>
+          <dl class="facts">
+            <div>
+              <dt>Status</dt>
+              <dd id="ready-state">Booting…</dd>
+            </div>
+            <div>
+              <dt>Account</dt>
+              <dd id="account-state">-</dd>
+            </div>
+            <div>
+              <dt>Model</dt>
+              <dd>
+                <select id="model-select"></select>
+              </dd>
+            </div>
+            <div>
+              <dt>Thread</dt>
+              <dd id="thread-state">-</dd>
+            </div>
+            <div>
+              <dt>Turn</dt>
+              <dd id="turn-state">idle</dd>
+            </div>
+          </dl>
+        </div>
+
+        <details class="panel panel-collapsible">
+          <summary class="panel-head panel-toggle">
+            <h2>Recent events</h2>
+            <div class="panel-toggle-meta">
+              <span id="event-count" class="tag">0</span>
+              <span class="panel-toggle-icon" aria-hidden="true"></span>
+            </div>
+          </summary>
+          <div id="events" class="event-list"></div>
+        </details>
+      </aside>
+
+      <main class="main">
+        <div class="panel panel-transcript">
+          <div class="panel-head">
+            <h2>Transcript</h2>
+            <span id="connection-state" class="tag">connecting</span>
+          </div>
+          <div id="transcript" class="transcript"></div>
+        </div>
+
+        <form id="composer" class="panel composer">
+          <label class="composer-label" for="prompt">
+            Send a prompt to the current thread
+          </label>
+          <textarea
+            id="prompt"
+            name="prompt"
+            rows="5"
+            placeholder="Ask something small first, like: Summarize the current repository."
+          ></textarea>
+          <div class="composer-actions">
+            <p class="hint" id="hint-text">
+              Approval requests are auto-declined in this minimal demo.
+            </p>
+            <button id="send" type="submit">Send</button>
+          </div>
+          <p id="error" class="error" hidden></p>
+        </form>
+      </main>
+    </div>
+
+    <script type="module" src="/app.js"></script>
+  </body>
+</html>

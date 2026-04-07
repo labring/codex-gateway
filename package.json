@@ -1,0 +1,12 @@
+{
+  "name": "codex-app-server-minimal",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "Minimal local harness and web UI for verifying Codex app-server over stdio.",
+  "scripts": {
+    "start": "node src/server.mjs",
+    "web": "node src/server.mjs",
+    "cli": "node src/cli.mjs"
+  }
+}
