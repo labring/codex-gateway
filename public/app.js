@@ -1,5 +1,6 @@
 const readyStateEl = document.querySelector("#ready-state");
 const accountStateEl = document.querySelector("#account-state");
+const sessionStateEl = document.querySelector("#session-state");
 const threadStateEl = document.querySelector("#thread-state");
 const turnStateEl = document.querySelector("#turn-state");
 const modelSelectEl = document.querySelector("#model-select");
@@ -15,6 +16,7 @@ const errorEl = document.querySelector("#error");
 
 let state = null;
 let eventSource = null;
+let sessionId = null;
 
 function escapeHtml(value) {
   return value
@@ -43,6 +45,7 @@ function renderState(nextState) {
 
   readyStateEl.textContent = state.ready ? "ready" : "starting";
   accountStateEl.textContent = state.account?.summary ?? "unknown";
+  sessionStateEl.textContent = sessionId ?? "not started";
   threadStateEl.textContent = state.threadId ?? "not started";
   turnStateEl.textContent = state.activeTurn
     ? `running${state.currentTurnId ? ` (${state.currentTurnId.slice(0, 8)})` : ""}`
@@ -125,16 +128,19 @@ function renderEvents() {
 
 function renderControls() {
   const busy = Boolean(state?.activeTurn);
-  sendEl.disabled = busy;
-  newThreadEl.disabled = busy;
-  modelSelectEl.disabled = busy;
-  promptEl.disabled = !state?.ready;
+  const unavailable = !sessionId;
+  sendEl.disabled = busy || unavailable;
+  newThreadEl.disabled = busy || unavailable;
+  modelSelectEl.disabled = busy || unavailable;
+  promptEl.disabled = !state?.ready || unavailable;
 }
 
-async function loadState() {
-  const response = await fetch("/api/state");
-  const payload = await response.json();
-  renderState(payload);
+function sessionPath(suffix = "") {
+  if (!sessionId) {
+    throw new Error("Session is not ready.");
+  }
+
+  return `/api/sessions/${encodeURIComponent(sessionId)}${suffix}`;
 }
 
 async function postJson(url, body) {
@@ -154,11 +160,28 @@ async function postJson(url, body) {
   return payload;
 }
 
+async function createSession() {
+  const payload = await postJson("/api/sessions", {});
+  sessionId = payload.sessionId;
+  renderState(payload.state);
+}
+
 function connectEvents() {
-  eventSource = new EventSource("/api/events");
+  if (!sessionId) {
+    throw new Error("Session is not ready.");
+  }
+
+  eventSource?.close();
+  eventSource = new EventSource(sessionPath("/events"));
 
   eventSource.addEventListener("open", () => {
     setConnectionState("streaming");
+  });
+
+  eventSource.addEventListener("session", (event) => {
+    const session = JSON.parse(event.data);
+    sessionId = session.id;
+    sessionStateEl.textContent = session.id;
   });
 
   eventSource.addEventListener("state", (event) => {
@@ -177,6 +200,12 @@ function connectEvents() {
     }
   });
 
+  eventSource.addEventListener("session-closed", (event) => {
+    const payload = JSON.parse(event.data);
+    showError(`Session closed: ${payload.reason}`);
+    setConnectionState("closed");
+  });
+
   eventSource.onerror = () => {
     setConnectionState("reconnecting");
   };
@@ -193,7 +222,7 @@ formEl.addEventListener("submit", async (event) => {
   }
 
   try {
-    await postJson("/api/turn", { prompt });
+    await postJson(sessionPath("/turn"), { prompt });
     promptEl.value = "";
   } catch (error) {
     showError(error.message);
@@ -204,11 +233,30 @@ newThreadEl.addEventListener("click", async () => {
   clearError();
 
   try {
-    await postJson("/api/thread/new", { model: modelSelectEl.value || undefined });
+    await postJson(sessionPath("/thread/new"), {
+      model: modelSelectEl.value || undefined,
+    });
   } catch (error) {
     showError(error.message);
   }
 });
 
-await loadState();
-connectEvents();
+window.addEventListener("pagehide", () => {
+  if (!sessionId) {
+    return;
+  }
+
+  eventSource?.close();
+  void fetch(sessionPath(""), {
+    method: "DELETE",
+    keepalive: true,
+  });
+});
+
+try {
+  await createSession();
+  connectEvents();
+} catch (error) {
+  showError(error.message);
+  setConnectionState("offline");
+}

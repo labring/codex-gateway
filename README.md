@@ -1,51 +1,82 @@
-# Codex App Server Minimal
+# Codex Gateway Minimal
 
-This repository is a minimal local project for verifying that `codex app-server` can power both:
+Chinese version: [README_zh.md](./README_zh.md)
 
-1. a one-shot CLI harness
-2. a tiny local web UI
+This repository is a minimal multi-session gateway for verifying that `codex app-server` can be exposed as a small HTTP/SSE service.
 
-The bridge is intentionally simple:
+The repository folder is still named `codex-sandbox`, and the npm package name is still the older `codex-app-server-minimal`. The runtime shape documented here is the current source of truth.
 
-- `codex app-server` runs locally over `stdio`
-- a Node bridge speaks JSON-RPC to it
-- the web page talks only to the Node bridge
-- streamed app-server notifications are forwarded to the browser over SSE
+The current shape is:
+
+1. external clients call a Node HTTP API
+2. the Node service creates one Codex bridge per session
+3. each bridge spawns its own local `codex app-server` child process over `stdio`
+4. streamed notifications are forwarded back to that client over SSE
 
 Official references used while building this:
 
 - [Codex App Server](https://developers.openai.com/codex/app-server/)
-- [Getting started](https://developers.openai.com/codex/app-server/#getting-started)
-- [Message schema](https://developers.openai.com/codex/app-server/#message-schema)
-- [Approvals](https://developers.openai.com/codex/app-server/#approvals)
-- [Events / Items](https://developers.openai.com/codex/app-server/#items)
-- [Item deltas](https://developers.openai.com/codex/app-server/#item-deltas)
+- [Codex CLI quickstart](https://developers.openai.com/codex/quickstart/#setup)
 
 ## What is in here
 
 - `src/codex-app-server.mjs`: reusable bridge for `initialize`, `account/read`, `model/list`, `thread/start`, `turn/start`, and notification handling
-- `src/server.mjs`: local HTTP server plus SSE stream for the browser
-- `src/cli.mjs`: one-shot CLI smoke test
+- `src/session-manager.mjs`: multi-session lifecycle manager for bridges, TTL cleanup, and session-scoped event forwarding
+- `src/server.mjs`: local/public HTTP server with session APIs, SSE streams, health endpoints, and the demo UI
+- `src/cli.mjs`: one-shot CLI smoke test for a single bridge
 - `public/index.html`: minimal browser UI
-- `public/app.js`: browser behavior
+- `public/app.js`: browser behavior that creates its own API session and listens to its own SSE stream
 - `public/styles.css`: intentionally simple UI styling
+- `Dockerfile`: single-container runtime image that installs the Codex CLI on Linux
 
-## Prerequisites
+## Runtime model
 
-- Node.js 22 or newer
-- `codex` installed and available on `PATH`
-- a working local Codex login if your provider requires OpenAI auth
+This is no longer a single shared in-memory conversation.
 
-Checked in this environment on `2026-04-07` with:
+- `POST /api/sessions` creates a new session
+- each session owns one `CodexAppServerBridge`
+- each bridge owns one `codex app-server` subprocess
+- all `/state`, `/events`, `/turn`, and `/thread/new` calls are scoped to one session id
+- sessions expire after an idle TTL and are also removable explicitly with `DELETE /api/sessions/:id`
 
-- `codex-cli 0.118.0`
-- `node v22.22.0`
+That makes the service usable by multiple callers without sharing one thread or transcript.
 
-## How to use
+## HTTP API
+
+### Health
+
+- `GET /healthz`
+- `GET /readyz`
+
+### Sessions
+
+- `POST /api/sessions`
+  - body: `{ "model": "optional-model-id" }`
+  - returns: `{ ok, sessionId, session, state }`
+- `GET /api/sessions/:id/state`
+  - returns the latest session metadata plus the current bridge state snapshot
+- `GET /api/sessions/:id/events`
+  - SSE stream for that session only
+- `POST /api/sessions/:id/turn`
+  - body: `{ "prompt": "..." }`
+- `POST /api/sessions/:id/thread/new`
+  - body: `{ "model": "optional-model-id" }`
+- `DELETE /api/sessions/:id`
+  - closes the session and its child process
+
+### Important behavior
+
+- approval requests are still auto-declined
+- unsupported server-initiated requests are rejected
+- session state is in memory only
+- there is no auth layer in this PoC
+- one session can only have one active turn at a time
+
+## Local usage
 
 ### Web UI
 
-Start the local web server:
+Start the local server:
 
 ```bash
 npm start
@@ -57,24 +88,11 @@ Then open:
 http://127.0.0.1:3000
 ```
 
-What to do in the page:
-
-1. Wait until the session status shows `ready`.
-2. Confirm the account and selected model look correct.
-3. Type a prompt in the textarea.
-4. Click `Send`.
-5. Watch the transcript and recent events update in real time.
-6. If you want a clean conversation, click `New thread`.
-
-Good first prompts:
-
-- `Reply with exactly the word ready.`
-- `Summarize the current repository in 3 bullets.`
-- `What model are you currently using?`
+The page creates a fresh session automatically, subscribes to its own SSE stream, and tears the session down on tab close when possible.
 
 ### CLI smoke test
 
-Run the old one-shot harness:
+Run the one-shot harness:
 
 ```bash
 npm run cli
@@ -86,51 +104,88 @@ Or with a custom prompt:
 npm run cli -- "Reply with exactly the single word ready."
 ```
 
-## Important behavior in this minimal demo
+## Verification
 
-This web UI is intentionally conservative.
+If you want to verify the project manually, the shortest path is:
 
-- It supports normal prompt -> thread -> turn flows.
-- It streams state updates and recent notifications to the browser.
-- It does **not** implement interactive approval UI.
-- If `codex app-server` sends approval requests for command execution or file changes, this demo automatically responds with `decline` and shows that in the transcript/events.
-- Any unsupported server-initiated request is rejected with a JSON-RPC error and surfaced in the UI.
+1. Start the service with `npm start`.
+2. Check `http://127.0.0.1:3000/healthz`.
+3. Check `http://127.0.0.1:3000/readyz`.
+4. Open `http://127.0.0.1:3000` and wait for the page status to become `ready`.
+5. Send `Reply with exactly the single word ready. Do not call tools.` from the page.
+6. Confirm that the transcript shows `ready`.
 
-That tradeoff keeps the demo safe and small while still proving the integration path.
+If you want to verify the API directly instead of the page:
 
-## What the web app proves
+Create a session:
 
-If the page works locally, you have confirmed that:
+```bash
+curl -X POST http://127.0.0.1:3000/api/sessions \
+  -H 'Content-Type: application/json' \
+  -d '{}'
+```
 
-- your own process can spawn `codex app-server`
-- the JSON-RPC handshake works
-- auth state and model discovery work through the protocol
-- a browser can control the bridge without talking to Codex directly
-- streamed notifications can be forwarded into a real UI
-- thread creation and multi-turn prompting work from the browser
+Send a turn:
 
-## Observed on this machine
+```bash
+curl -X POST http://127.0.0.1:3000/api/sessions/<SESSION_ID>/turn \
+  -H 'Content-Type: application/json' \
+  -d '{"prompt":"Reply with exactly the single word ready. Do not call tools."}'
+```
 
-A real CLI run in this repository on `2026-04-07` completed successfully and returned `pong`.
+Read the latest state:
 
-Non-blocking warnings also appeared in this environment:
+```bash
+curl http://127.0.0.1:3000/api/sessions/<SESSION_ID>/state
+```
 
-- a local skill file outside this repository had invalid YAML
-- featured plugin cache warmup returned `403 Forbidden`
+If the transcript contains `ready`, the gateway, bridge, and `codex app-server` handshake are all working.
 
-Neither warning blocked `initialize`, `account/read`, `model/list`, `thread/start`, `turn/start`, or the final `turn/completed` event.
+## Environment variables
 
-## Troubleshooting
+- `HOST`: bind address for the Node server. Defaults to `0.0.0.0`.
+- `PORT`: bind port. Defaults to `3000`.
+- `CODEX_CWD`: working directory passed to `thread/start`. Defaults to the repository root.
+- `CODEX_BIN`: path to the `codex` executable if it is not on `PATH`.
+- `CODEX_MODEL`: preferred default model for new bridges.
+- `MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
+- `SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
+- `SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
+- `CODEX_HOME`: Codex runtime home for auth, logs, history, and config. In Docker this defaults to `/codex-home`.
 
-- If the page never reaches `ready`, check the terminal where `npm start` is running.
-- If `account.summary` is `none` and `requiresOpenaiAuth=true`, sign in to Codex first.
-- If prompts that require shell commands or file writes seem to stop, check the transcript. This demo auto-declines those approval requests by design.
-- If port `3000` is busy, run `PORT=3001 npm start` and open the matching URL.
+## Docker
 
-## Next step
+The container image installs the Codex CLI on Linux with `npm install -g @openai/codex`, which matches the official Codex CLI quickstart.
 
-Once this is stable, the next sensible iteration is one of:
+Build the image:
 
-- add a real approval UI for command/file-change requests
-- support multiple browser sessions instead of one shared bridge
-- switch the backend transport from `stdio` to the experimental WebSocket mode
+```bash
+docker build -t codex-gateway-minimal .
+```
+
+Run it:
+
+```bash
+docker run --rm \
+  -p 3000:3000 \
+  -e HOST=0.0.0.0 \
+  -e PORT=3000 \
+  -e MAX_SESSIONS=8 \
+  -v "$HOME/.codex:/codex-home" \
+  codex-gateway-minimal
+```
+
+Notes:
+
+- the mounted `CODEX_HOME` gives the container access to existing Codex auth/config state
+- if you want Codex to operate on another workspace inside the container, set `CODEX_CWD` and mount that path too
+- this is a PoC deployment shape, not a hardened public service
+- after the container starts, use the same health/API/Web UI verification flow described above
+
+## Current limitations
+
+- no authentication or rate limiting
+- no durable session persistence
+- approval UI is intentionally absent
+- each live session consumes a `codex app-server` subprocess
+- browser clients reconnect with SSE, but session ownership is not persisted across page reloads unless the caller stores the session id
