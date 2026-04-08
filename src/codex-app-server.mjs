@@ -29,8 +29,8 @@ export class CodexAppServerBridge extends EventEmitter {
     codexBin = process.env.CODEX_BIN || "codex",
     debug = process.env.DEBUG === "1",
     clientInfo = {
-      name: "codex_app_server_minimal_web",
-      title: "Codex App Server Minimal Web",
+      name: "codex_gateway_web",
+      title: "Codex Gateway Web",
       version: "0.2.0",
     },
   } = {}) {
@@ -238,7 +238,7 @@ export class CodexAppServerBridge extends EventEmitter {
           : "fileChange",
         textPreview: preview(params.reason) ?? preview(params.command) ?? preview(params.cwd),
       });
-      this.pushSystemNote(`Auto-declined ${method} in the minimal web demo.`);
+      this.pushSystemNote(`Auto-declined ${method} in the gateway web UI.`);
       this.emit("serverRequest", {
         method,
         params,
@@ -251,7 +251,7 @@ export class CodexAppServerBridge extends EventEmitter {
 
     const error = {
       code: -32601,
-      message: `Unsupported server request in minimal demo: ${method}`,
+      message: `Unsupported server request in gateway demo: ${method}`,
     };
 
     this.send({ id, error });
@@ -360,12 +360,12 @@ export class CodexAppServerBridge extends EventEmitter {
     }
 
     if (item.type === "commandExecution" && item.status === "declined") {
-      this.pushSystemNote("A command execution request was declined by the minimal web demo.");
+      this.pushSystemNote("A command execution request was declined by the gateway UI.");
       return;
     }
 
     if (item.type === "fileChange" && item.status === "declined") {
-      this.pushSystemNote("A file change request was declined by the minimal web demo.");
+      this.pushSystemNote("A file change request was declined by the gateway UI.");
     }
   }
 

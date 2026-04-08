@@ -1,10 +1,8 @@
-# Codex Gateway Minimal
+# Codex Gateway
 
 English version: [README.md](./README.md)
 
 这个仓库当前的定位，是一个最小化的多 session `Codex gateway`，用于验证 `codex app-server` 能不能通过 Node HTTP/SSE 服务对外暴露。
-
-仓库目录名目前仍然是 `codex-sandbox`，`package.json` 里的包名也还是历史名称 `codex-app-server-minimal`。以当前源码和本文档描述为准。
 
 ## 当前形态
 
@@ -161,7 +159,7 @@ curl http://127.0.0.1:3000/api/sessions/<SESSION_ID>/state
 构建镜像：
 
 ```bash
-docker build -t codex-gateway-minimal .
+docker build -t codex-gateway .
 ```
 
 运行容器：
@@ -173,7 +171,7 @@ docker run --rm \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
   -v "$HOME/.codex:/codex-home" \
-  codex-gateway-minimal
+  codex-gateway
 ```
 
 说明：

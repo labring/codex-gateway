@@ -1,10 +1,8 @@
-# Codex Gateway Minimal
+# Codex Gateway
 
 Chinese version: [README_zh.md](./README_zh.md)
 
 This repository is a minimal multi-session gateway for verifying that `codex app-server` can be exposed as a small HTTP/SSE service.
-
-The repository folder is still named `codex-sandbox`, and the npm package name is still the older `codex-app-server-minimal`. The runtime shape documented here is the current source of truth.
 
 The current shape is:
 
@@ -160,7 +158,7 @@ The container image installs the Codex CLI on Linux with `npm install -g @openai
 Build the image:
 
 ```bash
-docker build -t codex-gateway-minimal .
+docker build -t codex-gateway .
 ```
 
 Run it:
@@ -172,7 +170,7 @@ docker run --rm \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
   -v "$HOME/.codex:/codex-home" \
-  codex-gateway-minimal
+  codex-gateway
 ```
 
 Notes:

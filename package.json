@@ -1,9 +1,9 @@
 {
-  "name": "codex-app-server-minimal",
+  "name": "codex-gateway",
   "version": "0.2.0",
   "private": true,
   "type": "module",
-  "description": "Minimal local harness and web UI for verifying Codex app-server over stdio.",
+  "description": "Minimal multi-session HTTP/SSE gateway for codex app-server.",
   "scripts": {
     "start": "node src/server.mjs",
     "web": "node src/server.mjs",

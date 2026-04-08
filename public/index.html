@@ -3,18 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Codex App Server Minimal Web</title>
+    <title>Codex Gateway</title>
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
     <div class="shell">
       <aside class="sidebar">
         <div class="panel panel-brand">
-          <p class="eyebrow">Minimal bridge</p>
-          <h1>Codex App Server</h1>
+          <p class="eyebrow">Multi-session gateway</p>
+          <h1>Codex Gateway</h1>
           <p class="lede">
-            Browser UI on top of a local Node bridge. The bridge spawns
-            <code>codex app-server</code> and streams its events into this page.
+            Browser UI on top of a local Node gateway. The gateway creates a
+            session-scoped bridge, starts <code>codex app-server</code>, and
+            streams its events into this page.
           </p>
         </div>
 
@@ -86,7 +87,7 @@
           ></textarea>
           <div class="composer-actions">
             <p class="hint" id="hint-text">
-              Approval requests are auto-declined in this minimal demo.
+              Approval requests are auto-declined in this gateway demo.
             </p>
             <button id="send" type="submit">Send</button>
           </div>
