@@ -15,10 +15,14 @@ Official references used while building this:
 
 - [Codex App Server](https://developers.openai.com/codex/app-server/)
 - [Codex CLI quickstart](https://developers.openai.com/codex/quickstart/#setup)
+- [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+- [Codex CI/CD auth](https://developers.openai.com/codex/auth/ci-cd-auth)
 
 ## What is in here
 
 - `src/codex-app-server.mjs`: reusable bridge for `initialize`, `account/read`, `model/list`, `thread/start`, `turn/start`, and notification handling
+- `src/codex-runtime.mjs`: shared runtime helpers for API-key login and `openai_base_url` overrides
+- `src/bootstrap.mjs`: startup entrypoint that performs optional API-key login before launching the gateway
 - `src/session-manager.mjs`: multi-session lifecycle manager for bridges, TTL cleanup, and session-scoped event forwarding
 - `src/server.mjs`: local/public HTTP server with session APIs, SSE streams, health endpoints, and the demo UI
 - `src/cli.mjs`: one-shot CLI smoke test for a single bridge
@@ -67,7 +71,7 @@ That makes the service usable by multiple callers without sharing one thread or 
 - approval requests are still auto-declined
 - unsupported server-initiated requests are rejected
 - session state is in memory only
-- there is no auth layer in this PoC
+- there is no gateway auth layer in this PoC
 - one session can only have one active turn at a time
 
 ## Local usage
@@ -77,6 +81,8 @@ That makes the service usable by multiple callers without sharing one thread or 
 Start the local server:
 
 ```bash
+OPENAI_API_KEY=sk-... \
+CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
 npm start
 ```
 
@@ -146,10 +152,13 @@ If the transcript contains `ready`, the gateway, bridge, and `codex app-server` 
 - `CODEX_CWD`: working directory passed to `thread/start`. Defaults to the repository root.
 - `CODEX_BIN`: path to the `codex` executable if it is not on `PATH`.
 - `CODEX_MODEL`: preferred default model for new bridges.
+- `OPENAI_API_KEY`: API key used at startup to run `codex login --with-api-key`.
+- `CODEX_OPENAI_BASE_URL`: preferred override for the upstream OpenAI-compatible base URL passed to Codex as `openai_base_url`.
+- `OPENAI_BASE_URL`: optional fallback alias for `CODEX_OPENAI_BASE_URL`.
 - `MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
 - `SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
 - `SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
-- `CODEX_HOME`: Codex runtime home for auth, logs, history, and config. In Docker this defaults to `/codex-home`.
+- `CODEX_HOME`: Codex runtime home for auth cache, logs, history, and config. In Docker this defaults to `/codex-home`.
 
 ## Docker
 
@@ -166,16 +175,19 @@ Run it:
 ```bash
 docker run --rm \
   -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
   -e HOST=0.0.0.0 \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
-  -v "$HOME/.codex:/codex-home" \
   codex-gateway
 ```
 
 Notes:
 
-- the mounted `CODEX_HOME` gives the container access to existing Codex auth/config state
+- if `OPENAI_API_KEY` is set, the container runs `codex login --with-api-key` automatically before starting the gateway
+- `CODEX_OPENAI_BASE_URL` is the preferred way to point Codex at a third-party OpenAI-compatible endpoint
+- you do not need to mount `CODEX_HOME` for normal API-key-based startup; mount it only if you want Codex state to persist across container restarts
 - if you want Codex to operate on another workspace inside the container, set `CODEX_CWD` and mount that path too
 - this is a PoC deployment shape, not a hardened public service
 - after the container starts, use the same health/API/Web UI verification flow described above
@@ -201,10 +213,11 @@ Run it the same way as the local image:
 ```bash
 docker run --rm \
   -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
   -e HOST=0.0.0.0 \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
-  -v "$HOME/.codex:/codex-home" \
   ghcr.io/che-zhu/codex-gateway:main
 ```
 
@@ -212,7 +225,7 @@ If the package is private, authenticate to GHCR before pulling it.
 
 ## Current limitations
 
-- no authentication or rate limiting
+- no gateway authentication or rate limiting
 - no durable session persistence
 - approval UI is intentionally absent
 - each live session consumes a `codex app-server` subprocess

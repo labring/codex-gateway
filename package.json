@@ -5,8 +5,8 @@
   "type": "module",
   "description": "Minimal multi-session HTTP/SSE gateway for codex app-server.",
   "scripts": {
-    "start": "node src/server.mjs",
-    "web": "node src/server.mjs",
+    "start": "node src/bootstrap.mjs",
+    "web": "node src/bootstrap.mjs",
     "cli": "node src/cli.mjs"
   }
 }
