@@ -17,10 +17,14 @@ English version: [README.md](./README.md)
 
 - [Codex App Server](https://developers.openai.com/codex/app-server/)
 - [Codex CLI Quickstart](https://developers.openai.com/codex/quickstart/#setup)
+- [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+- [Codex CI/CD auth](https://developers.openai.com/codex/auth/ci-cd-auth)
 
 ## 目录说明
 
 - `src/codex-app-server.mjs`：协议桥接层，负责 `initialize`、`account/read`、`model/list`、`thread/start`、`turn/start` 和通知处理
+- `src/codex-runtime.mjs`：运行时辅助模块，负责 API key 登录和 `openai_base_url` 覆盖
+- `src/bootstrap.mjs`：统一启动入口，会在启动 gateway 前按需执行 API key 登录
 - `src/session-manager.mjs`：多 session 生命周期管理，包含 TTL 回收和 session 级事件转发
 - `src/server.mjs`：HTTP 服务本体，提供 session API、SSE、健康检查和 Web UI
 - `src/cli.mjs`：单次 CLI 冒烟验证
@@ -69,7 +73,7 @@ English version: [README.md](./README.md)
 - 审批请求仍然会被自动拒绝
 - 不支持的 server 发起请求会被拒绝
 - session 状态只存在内存里，不持久化
-- 当前没有鉴权
+- 当前没有 gateway 自己的鉴权
 - 单个 session 同一时间只能有一个 active turn
 
 ## 本地运行
@@ -79,6 +83,8 @@ English version: [README.md](./README.md)
 启动服务：
 
 ```bash
+OPENAI_API_KEY=sk-... \
+CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
 npm start
 ```
 
@@ -147,10 +153,13 @@ curl http://127.0.0.1:3000/api/sessions/<SESSION_ID>/state
 - `CODEX_CWD`：传给 `thread/start` 的工作目录，默认仓库根目录
 - `CODEX_BIN`：`codex` 可执行文件路径，默认从 `PATH` 查找
 - `CODEX_MODEL`：新 bridge 默认模型
+- `OPENAI_API_KEY`：启动时用于执行 `codex login --with-api-key` 的 API key
+- `CODEX_OPENAI_BASE_URL`：推荐使用的上游 OpenAI-compatible `base_url`，会映射成 Codex 的 `openai_base_url`
+- `OPENAI_BASE_URL`：`CODEX_OPENAI_BASE_URL` 的兼容别名
 - `MAX_SESSIONS`：最大同时在线 session 数，默认 `12`
 - `SESSION_TTL_MS`：空闲 session TTL，默认 `1800000`
 - `SESSION_SWEEP_INTERVAL_MS`：清理扫描间隔，默认 `60000`
-- `CODEX_HOME`：Codex 运行目录，包含认证、日志、历史和配置；Docker 默认值是 `/codex-home`
+- `CODEX_HOME`：Codex 运行目录，包含认证缓存、日志、历史和配置；Docker 默认值是 `/codex-home`
 
 ## Docker
 
@@ -167,16 +176,19 @@ docker build -t codex-gateway .
 ```bash
 docker run --rm \
   -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
   -e HOST=0.0.0.0 \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
-  -v "$HOME/.codex:/codex-home" \
   codex-gateway
 ```
 
 说明：
 
-- 挂载 `CODEX_HOME` 是为了让容器拿到现有 Codex 的认证和配置
+- 如果设置了 `OPENAI_API_KEY`，容器会在启动 gateway 前自动执行 `codex login --with-api-key`
+- `CODEX_OPENAI_BASE_URL` 是把 Codex 指向第三方 OpenAI-compatible endpoint 的推荐方式
+- 普通 API key 启动不需要挂载 `CODEX_HOME`；只有在你希望容器重启后保留 Codex 状态时才需要挂载
 - 如果要让 Codex 在容器里操作别的工作目录，需要同时设置 `CODEX_CWD` 并挂载对应路径
 - 这是 PoC 部署方式，不是生产加固版本
 - 容器启动后，验证方法和本地运行时完全一样
@@ -202,10 +214,11 @@ docker pull ghcr.io/che-zhu/codex-gateway:main
 ```bash
 docker run --rm \
   -p 3000:3000 \
+  -e OPENAI_API_KEY=sk-... \
+  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
   -e HOST=0.0.0.0 \
   -e PORT=3000 \
   -e MAX_SESSIONS=8 \
-  -v "$HOME/.codex:/codex-home" \
   ghcr.io/che-zhu/codex-gateway:main
 ```
 
@@ -213,7 +226,7 @@ docker run --rm \
 
 ## 当前限制
 
-- 没有鉴权和限流
+- 没有 gateway 自己的鉴权和限流
 - 没有持久化 session
 - 没有审批 UI
 - 每个活跃 session 都会占用一个 `codex app-server` 子进程

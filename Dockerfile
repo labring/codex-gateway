@@ -22,4 +22,4 @@ COPY src ./src
 
 EXPOSE 3000
 
-CMD ["node", "src/server.mjs"]
+CMD ["node", "src/bootstrap.mjs"]

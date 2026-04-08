@@ -1,5 +1,6 @@
 import process from "node:process";
 import { CodexAppServerBridge } from "./codex-app-server.mjs";
+import { maybeLoginWithApiKey } from "./codex-runtime.mjs";
 
 const DEFAULT_PROMPT =
   "Reply with exactly the single word pong. Do not call tools. Do not read files. Do not run commands. Do not use markdown.";
@@ -22,6 +23,7 @@ bridge.on("warning", (warning) => {
 });
 
 async function main() {
+  await maybeLoginWithApiKey();
   const state = await bridge.start();
 
   console.log(`Starting ${bridge.codexBin} app-server from ${state.cwd}`);

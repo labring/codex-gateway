@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import process from "node:process";
+import { getCodexConfigArgs } from "./codex-runtime.mjs";
 
 const MAX_EVENTS = 120;
 const MAX_TRANSCRIPT = 100;
@@ -74,7 +75,7 @@ export class CodexAppServerBridge extends EventEmitter {
 
     this.startTimestamp = new Date().toISOString();
 
-    this.child = spawn(this.codexBin, ["app-server"], {
+    this.child = spawn(this.codexBin, ["app-server", ...getCodexConfigArgs()], {
       cwd: this.cwd,
       stdio: ["pipe", "pipe", "inherit"],
     });
