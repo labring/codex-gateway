@@ -3,6 +3,7 @@ import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import process from "node:process";
 import { getCodexConfigArgs } from "./codex-runtime.mjs";
+import { buildCodexChildEnv, ENV_NAMES, readBooleanFlag, readEnv } from "./env-config.mjs";
 
 const MAX_EVENTS = 120;
 const MAX_TRANSCRIPT = 100;
@@ -27,8 +28,8 @@ function clone(value) {
 export class CodexAppServerBridge extends EventEmitter {
   constructor({
     cwd = process.cwd(),
-    codexBin = process.env.CODEX_BIN || "codex",
-    debug = process.env.DEBUG === "1",
+    codexBin = readEnv(ENV_NAMES.codexBin) || "codex",
+    debug = readBooleanFlag(ENV_NAMES.debug),
     clientInfo = {
       name: "codex_gateway_web",
       title: "Codex Gateway Web",
@@ -77,6 +78,7 @@ export class CodexAppServerBridge extends EventEmitter {
 
     this.child = spawn(this.codexBin, ["app-server", ...getCodexConfigArgs()], {
       cwd: this.cwd,
+      env: buildCodexChildEnv(),
       stdio: ["pipe", "pipe", "inherit"],
     });
 
@@ -571,7 +573,7 @@ export class CodexAppServerBridge extends EventEmitter {
       throw new Error("model/list returned no visible models");
     }
 
-    const configuredModel = process.env.CODEX_MODEL;
+    const configuredModel = readEnv(ENV_NAMES.defaultModel);
     this.selectedModel =
       configuredModel ||
       this.models.find((model) => model.isDefault)?.model ||

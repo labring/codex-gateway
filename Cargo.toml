@@ -16,14 +16,20 @@ path = "rust-src/cli.rs"
 
 [dependencies]
 async-stream = "0.3"
-axum = { version = "0.8", features = ["json", "macros"] }
+axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 chrono = { version = "0.4", features = ["clock", "serde"] }
 futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
-tower-http = { version = "0.6", features = ["fs", "trace"] }
+tokio = { version = "1", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+strip = true
+panic = "abort"

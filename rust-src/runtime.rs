@@ -1,8 +1,9 @@
-use std::env;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
 use thiserror::Error;
+
+use crate::env_config::{OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV, apply_codex_child_env, read_env};
 
 const CUSTOM_PROVIDER_ID: &str = "OpenAI";
 
@@ -15,19 +16,19 @@ pub enum RuntimeError {
 }
 
 pub fn get_openai_base_url() -> Option<String> {
-    read_env("CODEX_OPENAI_BASE_URL").or_else(|| read_env("OPENAI_BASE_URL"))
+    read_env(OPENAI_BASE_URL_ENV)
 }
 
 pub fn get_codex_config_args() -> Vec<String> {
     let mut args = Vec::new();
     let base_url = get_openai_base_url();
-    let has_api_key = read_env("OPENAI_API_KEY").is_some();
+    let has_api_key = read_env(OPENAI_API_KEY_ENV).is_some();
 
-    if let Some(base_url) = base_url {
+    if let Some(base_url) = base_url.as_deref() {
         args.extend(get_custom_provider_config_args(&base_url));
     }
 
-    if get_openai_base_url().is_some() || has_api_key {
+    if base_url.is_some() || has_api_key {
         args.push("-c".to_string());
         args.push(r#"forced_login_method="api""#.to_string());
     }
@@ -36,7 +37,7 @@ pub fn get_codex_config_args() -> Vec<String> {
 }
 
 pub fn maybe_login_with_api_key(codex_bin: &str) -> Result<bool, RuntimeError> {
-    let Some(api_key) = read_env("OPENAI_API_KEY") else {
+    let Some(api_key) = read_env(OPENAI_API_KEY_ENV) else {
         return Ok(false);
     };
 
@@ -46,16 +47,20 @@ pub fn maybe_login_with_api_key(codex_bin: &str) -> Result<bool, RuntimeError> {
     args.push("--with-api-key".to_string());
 
     if let Some(base_url) = base_url {
-        println!("Initializing Codex auth from OPENAI_API_KEY with base URL override {base_url}");
+        println!("Initializing Codex auth from configured OpenAI API key with base URL override {base_url}");
     } else {
-        println!("Initializing Codex auth from OPENAI_API_KEY");
+        println!("Initializing Codex auth from configured OpenAI API key");
     }
 
-    let mut child = Command::new(codex_bin)
+    let mut child = Command::new(codex_bin);
+    child
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
-        .stderr(Stdio::inherit())
+        .stderr(Stdio::inherit());
+    apply_codex_child_env(&mut child);
+
+    let mut child = child
         .spawn()
         .map_err(|error| {
             RuntimeError::Message(format!("Failed to start {codex_bin} login: {error}"))
@@ -75,19 +80,9 @@ pub fn maybe_login_with_api_key(codex_bin: &str) -> Result<bool, RuntimeError> {
     }
 
     Err(RuntimeError::Message(format!(
-        "{codex_bin} login failed while reading OPENAI_API_KEY (code={:?})",
+        "{codex_bin} login failed while reading the configured OpenAI API key (code={:?})",
         status.code()
     )))
-}
-
-fn read_env(name: &str) -> Option<String> {
-    let value = env::var(name).ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 fn get_custom_provider_config_args(base_url: &str) -> Vec<String> {

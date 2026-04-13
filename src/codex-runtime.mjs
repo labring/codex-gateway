@@ -1,24 +1,13 @@
 import { spawn } from "node:child_process";
-import process from "node:process";
-
+import { buildCodexChildEnv, ENV_NAMES, readEnv } from "./env-config.mjs";
 const CUSTOM_PROVIDER_ID = "OpenAI";
-
-function readEnv(name) {
-  const value = process.env[name];
-  if (typeof value !== "string") {
-    return null;
-  }
-
-  const trimmed = value.trim();
-  return trimmed ? trimmed : null;
-}
 
 function tomlString(value) {
   return JSON.stringify(value);
 }
 
 export function getOpenaiBaseUrl() {
-  return readEnv("CODEX_OPENAI_BASE_URL") ?? readEnv("OPENAI_BASE_URL");
+  return readEnv(ENV_NAMES.openaiBaseUrl);
 }
 
 function getCustomProviderConfigArgs(baseUrl) {
@@ -43,7 +32,7 @@ function getCustomProviderConfigArgs(baseUrl) {
 export function getCodexConfigArgs() {
   const args = [];
   const baseUrl = getOpenaiBaseUrl();
-  const hasApiKey = Boolean(readEnv("OPENAI_API_KEY"));
+  const hasApiKey = Boolean(readEnv(ENV_NAMES.openaiApiKey));
 
   if (baseUrl) {
     args.push(...getCustomProviderConfigArgs(baseUrl));
@@ -57,9 +46,9 @@ export function getCodexConfigArgs() {
 }
 
 export async function maybeLoginWithApiKey({
-  codexBin = process.env.CODEX_BIN || "codex",
+  codexBin = readEnv(ENV_NAMES.codexBin) || "codex",
 } = {}) {
-  const apiKey = readEnv("OPENAI_API_KEY");
+  const apiKey = readEnv(ENV_NAMES.openaiApiKey);
   if (!apiKey) {
     return false;
   }
@@ -69,12 +58,13 @@ export async function maybeLoginWithApiKey({
 
   console.log(
     baseUrl
-      ? `Initializing Codex auth from OPENAI_API_KEY with base URL override ${baseUrl}`
-      : "Initializing Codex auth from OPENAI_API_KEY",
+      ? `Initializing Codex auth from configured OpenAI API key with base URL override ${baseUrl}`
+      : "Initializing Codex auth from configured OpenAI API key",
   );
 
   await new Promise((resolve, reject) => {
     const child = spawn(codexBin, args, {
+      env: buildCodexChildEnv(),
       stdio: ["pipe", "inherit", "inherit"],
     });
 
@@ -90,7 +80,7 @@ export async function maybeLoginWithApiKey({
 
       reject(
         new Error(
-          `${codexBin} login failed while reading OPENAI_API_KEY (code=${code}, signal=${signal})`,
+          `${codexBin} login failed while reading the configured OpenAI API key (code=${code}, signal=${signal})`,
         ),
       );
     });

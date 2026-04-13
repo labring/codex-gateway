@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import { CodexAppServerBridge } from "./codex-app-server.mjs";
+import { ENV_NAMES, readEnv } from "./env-config.mjs";
 
 function positiveInteger(value, fallback) {
   const parsed = Number(value);
@@ -21,9 +22,9 @@ export class SessionManagerError extends Error {
 export class SessionManager extends EventEmitter {
   constructor({
     createBridge = () => new CodexAppServerBridge(),
-    sessionTtlMs = positiveInteger(process.env.SESSION_TTL_MS, 30 * 60 * 1000),
-    maxSessions = positiveInteger(process.env.MAX_SESSIONS, 12),
-    sweepIntervalMs = positiveInteger(process.env.SESSION_SWEEP_INTERVAL_MS, 60 * 1000),
+    sessionTtlMs = positiveInteger(readEnv(ENV_NAMES.sessionTtlMs), 30 * 60 * 1000),
+    maxSessions = positiveInteger(readEnv(ENV_NAMES.maxSessions), 12),
+    sweepIntervalMs = positiveInteger(readEnv(ENV_NAMES.sessionSweepIntervalMs), 60 * 1000),
   } = {}) {
     super();
     this.createBridge = createBridge;

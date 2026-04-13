@@ -12,6 +12,7 @@ use serde_json::{Value, json};
 use tokio::sync::{broadcast, oneshot};
 
 use crate::config::ClientInfo;
+use crate::env_config::apply_codex_child_env;
 use crate::error::AppError;
 use crate::models::{
     AccountSnapshot, BridgeEvent, BridgeStateSnapshot, ModelInfo, RpcErrorPayload,
@@ -457,6 +458,7 @@ impl CodexAppServerBridge {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
+        apply_codex_child_env(&mut child);
 
         let mut child = child.spawn().map_err(|error| {
             AppError::internal(format!(
