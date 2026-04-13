@@ -3,8 +3,8 @@ use std::time::Duration;
 
 use crate::env_config::{
     BRIDGE_CWD_ENV, CODEX_BIN_ENV, DEBUG_ENV, DEFAULT_MODEL_ENV, HOST_ENV, MAX_SESSIONS_ENV,
-    PORT_ENV, SESSION_SWEEP_INTERVAL_MS_ENV, SESSION_TTL_MS_ENV, read_bool_flag, read_env,
-    read_u16, read_u64, read_usize,
+    PORT_ENV, SESSION_SWEEP_INTERVAL_MS_ENV, SESSION_TTL_MS_ENV, JWT_SECRET_ENV,
+    read_bool_flag, read_env, read_u16, read_u64, read_usize,
 };
 
 #[derive(Debug, Clone)]
@@ -12,6 +12,11 @@ pub struct ClientInfo {
     pub name: String,
     pub title: String,
     pub version: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct AuthConfig {
+    pub jwt_secret: String,
 }
 
 #[derive(Debug, Clone)]
@@ -27,6 +32,7 @@ pub struct AppConfig {
     pub session_ttl: Duration,
     pub session_sweep_interval: Duration,
     pub client_info: ClientInfo,
+    pub auth: Option<AuthConfig>,
 }
 
 impl AppConfig {
@@ -55,6 +61,7 @@ impl AppConfig {
                 title: "Codex Gateway Web".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
             },
+            auth: read_env(JWT_SECRET_ENV).map(|jwt_secret| AuthConfig { jwt_secret }),
         }
     }
 }

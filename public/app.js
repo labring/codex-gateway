@@ -13,10 +13,12 @@ const promptEl = document.querySelector("#prompt");
 const sendEl = document.querySelector("#send");
 const newThreadEl = document.querySelector("#new-thread");
 const errorEl = document.querySelector("#error");
+const authTokenEl = document.querySelector("#auth-token");
 
 let state = null;
 let eventSource = null;
 let sessionId = null;
+let authToken = "";
 
 function escapeHtml(value) {
   return value
@@ -143,11 +145,16 @@ function sessionPath(suffix = "") {
   return `/api/sessions/${encodeURIComponent(sessionId)}${suffix}`;
 }
 
+function authHeaders() {
+  return authToken ? { Authorization: `Bearer ${authToken}` } : {};
+}
+
 async function postJson(url, body) {
   const response = await fetch(url, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      ...authHeaders(),
     },
     body: JSON.stringify(body),
   });
@@ -172,7 +179,11 @@ function connectEvents() {
   }
 
   eventSource?.close();
-  eventSource = new EventSource(sessionPath("/events"));
+  const url = new URL(sessionPath("/events"), window.location.origin);
+  if (authToken) {
+    url.searchParams.set("access_token", authToken);
+  }
+  eventSource = new EventSource(url);
 
   eventSource.addEventListener("open", () => {
     setConnectionState("streaming");
@@ -241,6 +252,13 @@ newThreadEl.addEventListener("click", async () => {
   }
 });
 
+authTokenEl.addEventListener("change", () => {
+  authToken = authTokenEl.value.trim();
+  if (sessionId) {
+    connectEvents();
+  }
+});
+
 window.addEventListener("pagehide", () => {
   if (!sessionId) {
     return;
@@ -249,6 +267,7 @@ window.addEventListener("pagehide", () => {
   eventSource?.close();
   void fetch(sessionPath(""), {
     method: "DELETE",
+    headers: authHeaders(),
     keepalive: true,
   });
 });

@@ -1,12 +1,14 @@
 use std::convert::Infallible;
 use std::env;
 use std::path::PathBuf;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_stream::stream;
 use axum::body::Bytes;
 use axum::extract::{Path, State};
 use axum::http::{HeaderValue, StatusCode, header};
+use axum::middleware;
 use axum::response::IntoResponse;
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::routing::{delete, get, post};
@@ -17,6 +19,7 @@ use serde_json::json;
 use tokio::net::TcpListener;
 use tracing::error;
 
+use codex_gateway::auth::{AuthState, auth_middleware};
 use codex_gateway::error::AppError;
 use codex_gateway::models::BridgeEvent;
 use codex_gateway::runtime::maybe_login_with_api_key;
@@ -77,12 +80,14 @@ async fn main() -> Result<(), AppError> {
 }
 
 fn build_router(state: AppState) -> Router {
-    Router::new()
+    let auth_state = Arc::new(AuthState::new(
+        state.session_manager.config().auth.clone(),
+    ));
+
+    let protected = Router::new()
         .route("/", get(index_html))
         .route("/app.js", get(app_js))
         .route("/styles.css", get(styles_css))
-        .route("/healthz", get(healthz))
-        .route("/readyz", get(readyz))
         .route(
             "/api/state",
             get(legacy_single_session_gone).post(legacy_single_session_gone),
@@ -105,6 +110,16 @@ fn build_router(state: AppState) -> Router {
         .route("/api/sessions/{id}/turn", post(post_turn))
         .route("/api/sessions/{id}/thread/new", post(post_new_thread))
         .route("/api/sessions/{id}", delete(delete_session))
+        .route_layer(middleware::from_fn_with_state(
+            Arc::clone(&auth_state),
+            auth_middleware,
+        ))
+        .with_state(state.clone());
+
+    Router::new()
+        .route("/healthz", get(healthz))
+        .route("/readyz", get(readyz))
+        .merge(protected)
         .fallback(not_found)
         .with_state(state)
 }

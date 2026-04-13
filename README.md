@@ -71,7 +71,7 @@ That makes the service usable by multiple callers without sharing one thread or 
 - approval requests are still auto-declined
 - unsupported server-initiated requests are rejected
 - session state is in memory only
-- there is no gateway auth layer in this PoC
+- gateway auth is optional and is enabled only when `CODEX_GATEWAY_JWT_SECRET` is set
 - one session can only have one active turn at a time
 
 ## Local usage
@@ -83,6 +83,7 @@ Start the local server:
 ```bash
 CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
 CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+CODEX_GATEWAY_JWT_SECRET=replace-with-your-hs256-secret \
 cargo run --bin codex-gateway
 ```
 
@@ -92,7 +93,7 @@ Then open:
 http://127.0.0.1:1317
 ```
 
-The page creates a fresh session automatically, subscribes to its own SSE stream, and tears the session down on tab close when possible.
+The page creates a fresh session automatically, subscribes to its own SSE stream, and tears the session down on tab close when possible. When JWT auth is enabled, paste a bearer token into the `Auth` panel before using the page.
 
 ### CLI smoke test
 
@@ -161,6 +162,7 @@ Gateway-owned settings use the `CODEX_GATEWAY_` prefix for better discoverabilit
 - `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
 - `CODEX_GATEWAY_CODEX_HOME`: Codex runtime home for auth cache, logs, history, and config. In Docker this defaults to `/codex-home`.
 - `CODEX_GATEWAY_DEBUG`: enables raw bridge message debugging when set to `1`.
+- `CODEX_GATEWAY_JWT_SECRET`: optional HS256 JWT secret. When set, the gateway requires a valid bearer token for all routes except `/healthz` and `/readyz`.
 
 ## Docker
 
@@ -179,6 +181,7 @@ docker run --rm \
   -p 1317:1317 \
   -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
   -e CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+  -e CODEX_GATEWAY_JWT_SECRET=replace-with-your-hs256-secret \
   -e CODEX_GATEWAY_HOST=0.0.0.0 \
   -e CODEX_GATEWAY_PORT=1317 \
   -e CODEX_GATEWAY_MAX_SESSIONS=8 \
@@ -189,6 +192,7 @@ Notes:
 
 - if `CODEX_GATEWAY_OPENAI_API_KEY` is set, the container runs `codex login --with-api-key` automatically before starting the gateway
 - `CODEX_GATEWAY_OPENAI_BASE_URL` is the preferred way to point Codex at a third-party OpenAI-compatible endpoint; the gateway maps it to a custom Codex provider instead of the built-in `openai` provider
+- if `CODEX_GATEWAY_JWT_SECRET` is set, clients must send `Authorization: Bearer <jwt>` on normal HTTP requests; the built-in Web UI also supports pasting the token into the sidebar
 - you do not need to mount `CODEX_GATEWAY_CODEX_HOME` for normal API-key-based startup; mount it only if you want Codex state to persist across container restarts
 - if you want Codex to operate on another workspace inside the container, set `CODEX_GATEWAY_CWD` and mount that path too
 - this is a PoC deployment shape, not a hardened public service
@@ -227,7 +231,7 @@ If the package is private, authenticate to GHCR before pulling it.
 
 ## Current limitations
 
-- no gateway authentication or rate limiting
+- no built-in rate limiting
 - no durable session persistence
 - approval UI is intentionally absent
 - each live session consumes a `codex app-server` subprocess

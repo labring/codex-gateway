@@ -165,12 +165,29 @@ DELETE /api/sessions/:id
 - 主动释放这个 session 对应的 `codex app-server` 子进程
 - 页面退出、任务完成、或会话明确结束时，建议主动调用
 
+## 2.7 可选鉴权
+
+如果服务端设置了 `CODEX_GATEWAY_JWT_SECRET`，除了 `/healthz` 和 `/readyz` 以外，其他路由都需要携带合法的 HS256 JWT。
+
+普通 HTTP 请求请带：
+
+```http
+Authorization: Bearer <JWT>
+```
+
+SSE 场景如果不方便设置请求头，也可以通过 query 参数传：
+
+```text
+/api/sessions/:id/events?access_token=<JWT>
+```
+
 ## 3. 最小示例
 
 ### 3.1 创建 session
 
 ```bash
 curl -X POST http://127.0.0.1:1317/api/sessions \
+  -H 'Authorization: Bearer <JWT>' \
   -H 'Content-Type: application/json' \
   -d '{}'
 ```
@@ -179,6 +196,7 @@ curl -X POST http://127.0.0.1:1317/api/sessions \
 
 ```bash
 curl -X POST http://127.0.0.1:1317/api/sessions/<SESSION_ID>/turn \
+  -H 'Authorization: Bearer <JWT>' \
   -H 'Content-Type: application/json' \
   -d '{"prompt":"Reply with exactly OK."}'
 ```
@@ -186,13 +204,15 @@ curl -X POST http://127.0.0.1:1317/api/sessions/<SESSION_ID>/turn \
 ### 3.3 查询状态
 
 ```bash
-curl http://127.0.0.1:1317/api/sessions/<SESSION_ID>/state
+curl http://127.0.0.1:1317/api/sessions/<SESSION_ID>/state \
+  -H 'Authorization: Bearer <JWT>'
 ```
 
 ### 3.4 删除 session
 
 ```bash
-curl -X DELETE http://127.0.0.1:1317/api/sessions/<SESSION_ID>
+curl -X DELETE http://127.0.0.1:1317/api/sessions/<SESSION_ID> \
+  -H 'Authorization: Bearer <JWT>'
 ```
 
 ## 4. 前端接入示例
@@ -200,9 +220,14 @@ curl -X DELETE http://127.0.0.1:1317/api/sessions/<SESSION_ID>
 下面是一个最小的浏览器侧接入思路：
 
 ```js
+const token = "<JWT>";
+
 const createResponse = await fetch("/api/sessions", {
   method: "POST",
-  headers: { "Content-Type": "application/json" },
+  headers: {
+    "Content-Type": "application/json",
+    Authorization: `Bearer ${token}`,
+  },
   body: JSON.stringify({ model: "gpt-5.4" }),
 });
 

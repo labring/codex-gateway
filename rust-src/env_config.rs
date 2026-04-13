@@ -13,6 +13,7 @@ pub const SESSION_SWEEP_INTERVAL_MS_ENV: &[&str] = &["CODEX_GATEWAY_SESSION_SWEE
 pub const OPENAI_API_KEY_ENV: &[&str] = &["CODEX_GATEWAY_OPENAI_API_KEY"];
 pub const OPENAI_BASE_URL_ENV: &[&str] = &["CODEX_GATEWAY_OPENAI_BASE_URL"];
 pub const CODEX_HOME_ENV: &[&str] = &["CODEX_GATEWAY_CODEX_HOME"];
+pub const JWT_SECRET_ENV: &[&str] = &["CODEX_GATEWAY_JWT_SECRET"];
 
 pub fn read_env(names: &[&str]) -> Option<String> {
     for name in names {

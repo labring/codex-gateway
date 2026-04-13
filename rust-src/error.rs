@@ -56,6 +56,13 @@ impl AppError {
         }
     }
 
+    pub fn unauthorized(message: impl Into<String>) -> Self {
+        Self::Http {
+            status: StatusCode::UNAUTHORIZED,
+            message: message.into(),
+        }
+    }
+
     pub fn internal(message: impl Into<String>) -> Self {
         Self::Http {
             status: StatusCode::INTERNAL_SERVER_ERROR,

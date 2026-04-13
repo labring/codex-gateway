@@ -1,3 +1,4 @@
+pub mod auth;
 pub mod bridge;
 pub mod config;
 pub mod env_config;
