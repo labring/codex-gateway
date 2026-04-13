@@ -3,6 +3,9 @@ use std::time::Duration;
 
 use codex_gateway::bridge::{BridgeOptions, CodexAppServerBridge};
 use codex_gateway::config::ClientInfo;
+use codex_gateway::env_config::{
+    CODEX_BIN_ENV, DEBUG_ENV, DEFAULT_MODEL_ENV, read_bool_flag, read_env,
+};
 use codex_gateway::error::AppError;
 use codex_gateway::models::BridgeEvent;
 use codex_gateway::runtime::maybe_login_with_api_key;
@@ -19,19 +22,19 @@ async fn main() -> Result<(), AppError> {
     };
 
     let cwd = env::current_dir()?;
-    let codex_bin = env::var("CODEX_BIN").unwrap_or_else(|_| "codex".to_string());
+    let codex_bin = read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string());
     maybe_login_with_api_key(&codex_bin)?;
 
     let bridge = CodexAppServerBridge::new(BridgeOptions {
         cwd: cwd.clone(),
         codex_bin: codex_bin.clone(),
-        debug: env::var("DEBUG").ok().as_deref() == Some("1"),
+        debug: read_bool_flag(DEBUG_ENV),
         client_info: ClientInfo {
             name: "codex_gateway_cli".to_string(),
             title: "Codex Gateway CLI".to_string(),
             version: env!("CARGO_PKG_VERSION").to_string(),
         },
-        default_model: env::var("CODEX_MODEL").ok(),
+        default_model: read_env(DEFAULT_MODEL_ENV),
         activity_touch: std::sync::Arc::new(|| {}),
     });
 

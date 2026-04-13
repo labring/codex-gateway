@@ -233,8 +233,8 @@ await fetch(`/api/sessions/${sessionId}/turn`, {
 
 当前默认值是：
 
-- `SESSION_TTL_MS = 1800000`
-- `SESSION_SWEEP_INTERVAL_MS = 60000`
+- `CODEX_GATEWAY_SESSION_TTL_MS = 1800000`
+- `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS = 60000`
 
 也就是：
 
@@ -262,7 +262,7 @@ await fetch(`/api/sessions/${sessionId}/turn`, {
 
 对接方通常不需要关心服务如何部署，但部署方至少需要配置：
 
-- `OPENAI_API_KEY`
-- `CODEX_OPENAI_BASE_URL`
+- `CODEX_GATEWAY_OPENAI_API_KEY`
+- `CODEX_GATEWAY_OPENAI_BASE_URL`
 
-当前 gateway 会把 `CODEX_OPENAI_BASE_URL` 映射成一个自定义 Codex provider，并显式关闭 websocket transport，以兼容当前使用的第三方 OpenAI-compatible upstream。
+当前 gateway 会把 `CODEX_GATEWAY_OPENAI_BASE_URL` 映射成一个自定义 Codex provider，并显式关闭 websocket transport，以兼容当前使用的第三方 OpenAI-compatible upstream。

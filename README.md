@@ -81,8 +81,8 @@ That makes the service usable by multiple callers without sharing one thread or 
 Start the local server:
 
 ```bash
-OPENAI_API_KEY=sk-... \
-CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
+CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
 cargo run --bin codex-gateway
 ```
 
@@ -147,18 +147,20 @@ If the transcript contains `ready`, the gateway, bridge, and `codex app-server` 
 
 ## Environment variables
 
-- `HOST`: bind address for the Rust server. Defaults to `0.0.0.0`.
-- `PORT`: bind port. Defaults to `1317`.
-- `CODEX_CWD`: working directory passed to `thread/start`. Defaults to the repository root.
-- `CODEX_BIN`: path to the `codex` executable if it is not on `PATH`.
-- `CODEX_MODEL`: preferred default model for new bridges.
-- `OPENAI_API_KEY`: API key used at startup to run `codex login --with-api-key`.
-- `CODEX_OPENAI_BASE_URL`: preferred upstream OpenAI-compatible base URL. When set, the gateway configures Codex to use a custom provider with `supports_websockets = false`.
-- `OPENAI_BASE_URL`: optional fallback alias for `CODEX_OPENAI_BASE_URL`.
-- `MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
-- `SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
-- `SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
-- `CODEX_HOME`: Codex runtime home for auth cache, logs, history, and config. In Docker this defaults to `/codex-home`.
+Gateway-owned settings use the `CODEX_GATEWAY_` prefix for better discoverability.
+
+- `CODEX_GATEWAY_HOST`: bind address for the Rust server. Defaults to `0.0.0.0`.
+- `CODEX_GATEWAY_PORT`: bind port. Defaults to `1317`.
+- `CODEX_GATEWAY_CWD`: working directory passed to `thread/start`. Defaults to the repository root.
+- `CODEX_GATEWAY_CODEX_BIN`: path to the `codex` executable if it is not on `PATH`.
+- `CODEX_GATEWAY_MODEL`: preferred default model for new bridges.
+- `CODEX_GATEWAY_OPENAI_API_KEY`: API key used at startup to run `codex login --with-api-key`.
+- `CODEX_GATEWAY_OPENAI_BASE_URL`: upstream OpenAI-compatible base URL. When set, the gateway configures Codex to use a custom provider with `supports_websockets = false`.
+- `CODEX_GATEWAY_MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
+- `CODEX_GATEWAY_SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
+- `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
+- `CODEX_GATEWAY_CODEX_HOME`: Codex runtime home for auth cache, logs, history, and config. In Docker this defaults to `/codex-home`.
+- `CODEX_GATEWAY_DEBUG`: enables raw bridge message debugging when set to `1`.
 
 ## Docker
 
@@ -175,20 +177,20 @@ Run it:
 ```bash
 docker run --rm \
   -p 1317:1317 \
-  -e OPENAI_API_KEY=sk-... \
-  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
-  -e HOST=0.0.0.0 \
-  -e PORT=1317 \
-  -e MAX_SESSIONS=8 \
+  -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
+  -e CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+  -e CODEX_GATEWAY_HOST=0.0.0.0 \
+  -e CODEX_GATEWAY_PORT=1317 \
+  -e CODEX_GATEWAY_MAX_SESSIONS=8 \
   codex-gateway
 ```
 
 Notes:
 
-- if `OPENAI_API_KEY` is set, the container runs `codex login --with-api-key` automatically before starting the gateway
-- `CODEX_OPENAI_BASE_URL` is the preferred way to point Codex at a third-party OpenAI-compatible endpoint; the gateway maps it to a custom Codex provider instead of the built-in `openai` provider
-- you do not need to mount `CODEX_HOME` for normal API-key-based startup; mount it only if you want Codex state to persist across container restarts
-- if you want Codex to operate on another workspace inside the container, set `CODEX_CWD` and mount that path too
+- if `CODEX_GATEWAY_OPENAI_API_KEY` is set, the container runs `codex login --with-api-key` automatically before starting the gateway
+- `CODEX_GATEWAY_OPENAI_BASE_URL` is the preferred way to point Codex at a third-party OpenAI-compatible endpoint; the gateway maps it to a custom Codex provider instead of the built-in `openai` provider
+- you do not need to mount `CODEX_GATEWAY_CODEX_HOME` for normal API-key-based startup; mount it only if you want Codex state to persist across container restarts
+- if you want Codex to operate on another workspace inside the container, set `CODEX_GATEWAY_CWD` and mount that path too
 - this is a PoC deployment shape, not a hardened public service
 - after the container starts, use the same health/API/Web UI verification flow described above
 
@@ -213,11 +215,11 @@ Run it the same way as the local image:
 ```bash
 docker run --rm \
   -p 1317:1317 \
-  -e OPENAI_API_KEY=sk-... \
-  -e CODEX_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
-  -e HOST=0.0.0.0 \
-  -e PORT=1317 \
-  -e MAX_SESSIONS=8 \
+  -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
+  -e CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+  -e CODEX_GATEWAY_HOST=0.0.0.0 \
+  -e CODEX_GATEWAY_PORT=1317 \
+  -e CODEX_GATEWAY_MAX_SESSIONS=8 \
   ghcr.io/che-zhu/codex-gateway:main
 ```
 

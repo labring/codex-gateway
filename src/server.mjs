@@ -4,15 +4,16 @@ import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { CodexAppServerBridge } from "./codex-app-server.mjs";
+import { ENV_NAMES, readEnv } from "./env-config.mjs";
 import { SessionManager, SessionManagerError } from "./session-manager.mjs";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const publicDir = path.join(rootDir, "public");
-const host = process.env.HOST || "0.0.0.0";
-const port = Number(process.env.PORT || 1317);
-const bridgeCwd = process.env.CODEX_CWD || rootDir;
+const host = readEnv(ENV_NAMES.host) || "0.0.0.0";
+const port = Number(readEnv(ENV_NAMES.port) || 1317);
+const bridgeCwd = readEnv(ENV_NAMES.bridgeCwd) || rootDir;
 
 const sessionManager = new SessionManager({
   createBridge: () =>

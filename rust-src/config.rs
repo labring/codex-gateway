@@ -1,6 +1,11 @@
-use std::env;
 use std::path::PathBuf;
 use std::time::Duration;
+
+use crate::env_config::{
+    BRIDGE_CWD_ENV, CODEX_BIN_ENV, DEBUG_ENV, DEFAULT_MODEL_ENV, HOST_ENV, MAX_SESSIONS_ENV,
+    PORT_ENV, SESSION_SWEEP_INTERVAL_MS_ENV, SESSION_TTL_MS_ENV, read_bool_flag, read_env,
+    read_u16, read_u64, read_usize,
+};
 
 #[derive(Debug, Clone)]
 pub struct ClientInfo {
@@ -29,21 +34,21 @@ impl AppConfig {
         let public_dir = root_dir.join("public");
 
         Self {
-            host: read_env("HOST").unwrap_or_else(|| "0.0.0.0".to_string()),
-            port: read_u16("PORT").unwrap_or(1317),
-            bridge_cwd: read_env("CODEX_CWD")
+            host: read_env(HOST_ENV).unwrap_or_else(|| "0.0.0.0".to_string()),
+            port: read_u16(PORT_ENV).unwrap_or(1317),
+            bridge_cwd: read_env(BRIDGE_CWD_ENV)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| root_dir.clone()),
             public_dir,
-            codex_bin: read_env("CODEX_BIN").unwrap_or_else(|| "codex".to_string()),
-            debug: env::var("DEBUG").ok().as_deref() == Some("1"),
-            default_model: read_env("CODEX_MODEL"),
-            max_sessions: read_usize("MAX_SESSIONS").unwrap_or(12),
+            codex_bin: read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string()),
+            debug: read_bool_flag(DEBUG_ENV),
+            default_model: read_env(DEFAULT_MODEL_ENV),
+            max_sessions: read_usize(MAX_SESSIONS_ENV).unwrap_or(12),
             session_ttl: Duration::from_millis(
-                read_u64("SESSION_TTL_MS").unwrap_or(30 * 60 * 1000),
+                read_u64(SESSION_TTL_MS_ENV).unwrap_or(30 * 60 * 1000),
             ),
             session_sweep_interval: Duration::from_millis(
-                read_u64("SESSION_SWEEP_INTERVAL_MS").unwrap_or(60 * 1000),
+                read_u64(SESSION_SWEEP_INTERVAL_MS_ENV).unwrap_or(60 * 1000),
             ),
             client_info: ClientInfo {
                 name: "codex_gateway_web".to_string(),
@@ -52,26 +57,4 @@ impl AppConfig {
             },
         }
     }
-}
-
-fn read_env(name: &str) -> Option<String> {
-    let value = env::var(name).ok()?;
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
-}
-
-fn read_u16(name: &str) -> Option<u16> {
-    read_env(name)?.parse().ok()
-}
-
-fn read_u64(name: &str) -> Option<u64> {
-    read_env(name)?.parse().ok().filter(|value| *value > 0)
-}
-
-fn read_usize(name: &str) -> Option<usize> {
-    read_env(name)?.parse().ok().filter(|value| *value > 0)
 }
