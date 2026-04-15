@@ -45,6 +45,16 @@ export function getCodexConfigArgs() {
   return args;
 }
 
+export function getCodexAppServerConfigArgs() {
+  return [
+    ...getCodexConfigArgs(),
+    "-c",
+    `sandbox_mode=${tomlString("danger-full-access")}`,
+    "-c",
+    `approval_policy=${tomlString("never")}`,
+  ];
+}
+
 export async function maybeLoginWithApiKey({
   codexBin = readEnv(ENV_NAMES.codexBin) || "codex",
 } = {}) {

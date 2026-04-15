@@ -74,7 +74,8 @@ That makes the service usable by multiple callers without sharing one thread or 
 
 ### Important behavior
 
-- approval requests are still auto-declined
+- `codex app-server` is launched with `sandbox_mode="danger-full-access"` and `approval_policy="never"`
+- command execution and file change approval requests are auto-accepted if they still surface
 - unsupported server-initiated requests are rejected
 - session state is in memory only
 - gateway auth is optional and is enabled only when `CODEX_GATEWAY_JWT_SECRET` is set
@@ -240,6 +241,6 @@ If the package is private, authenticate to GHCR before pulling it.
 
 - no built-in rate limiting
 - no durable session persistence
-- approval UI is intentionally absent
+- approval UI is intentionally absent because this gateway defaults to full access
 - each live session consumes a `codex app-server` subprocess
 - browser clients reconnect with SSE, but session ownership is not persisted across page reloads unless the caller stores the session id

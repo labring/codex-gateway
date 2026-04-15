@@ -81,7 +81,7 @@ function renderTranscript() {
     transcriptEl.innerHTML = `
       <div class="empty-state">
         <p>No messages yet.</p>
-        <p>Start with a small read-only prompt to confirm the bridge is healthy.</p>
+        <p>Start with a small prompt to confirm the bridge is healthy.</p>
       </div>
     `;
     return;
@@ -209,7 +209,7 @@ function connectEvents() {
   eventSource.addEventListener("server-request", (event) => {
     const request = JSON.parse(event.data);
     if (request.handled && request.result === "decline") {
-      showError(`Auto-declined ${request.method}`);
+      showError(`Declined ${request.method}`);
     }
   });
 
