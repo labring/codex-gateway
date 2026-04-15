@@ -33,11 +33,12 @@ App-server behavior:
 Why:
 
 - 真实 coding agent 工作流需要用户批准命令执行和文件修改。
-- 当前自动拒绝会让很多任务无法继续。
+- 当前 Gateway 已经默认使用最高权限，交互式审批 UI 只有在以后需要收紧权限时才需要补齐。
 
 Current gap:
 
-- Gateway 当前会自动 `decline` approval request。
+- Gateway 当前会以 `sandbox_mode="danger-full-access"` 和 `approval_policy="never"` 启动 app-server。
+- 如果 approval request 仍然出现，Gateway 会自动接受。
 - Web UI 没有审批弹窗或审批 API。
 
 ## P1

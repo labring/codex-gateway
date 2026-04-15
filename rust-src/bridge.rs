@@ -18,7 +18,7 @@ use crate::models::{
     AccountSnapshot, BridgeEvent, BridgeStateSnapshot, ModelInfo, RpcErrorPayload,
     ServerRequestEvent, SessionClosedEvent, SummaryEvent, TranscriptEntry, WarningEvent,
 };
-use crate::runtime::get_codex_config_args;
+use crate::runtime::get_codex_app_server_config_args;
 
 const MAX_EVENTS: usize = 120;
 const MAX_TRANSCRIPT: usize = 100;
@@ -534,7 +534,7 @@ impl CodexAppServerBridge {
         let mut child = Command::new(&self.inner.codex_bin);
         child
             .arg("app-server")
-            .args(get_codex_config_args())
+            .args(get_codex_app_server_config_args())
             .current_dir(&self.inner.cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -724,9 +724,10 @@ impl CodexAppServerBridge {
         if method == "item/commandExecution/requestApproval"
             || method == "item/fileChange/requestApproval"
         {
+            let decision = auto_approval_decision(&params);
             let _ = self.send_json(&json!({
                 "id": id,
-                "result": "decline"
+                "result": decision
             }));
             self.record_summary_event(SummaryEvent {
                 at: Utc::now().to_rfc3339(),
@@ -738,12 +739,12 @@ impl CodexAppServerBridge {
                     "fileChange".to_string()
                 }),
                 item_id: None,
-                status: Some("auto-declined".to_string()),
+                status: Some("auto-accepted".to_string()),
                 text_preview: preview(params.get("reason"))
                     .or_else(|| preview(params.get("command")))
                     .or_else(|| preview(params.get("cwd"))),
             });
-            self.push_system_note(format!("Auto-declined {method} in the gateway web UI."));
+            self.push_system_note(format!("Auto-accepted {method} in the gateway web UI."));
             let _ = self
                 .inner
                 .events
@@ -751,7 +752,7 @@ impl CodexAppServerBridge {
                     method,
                     params,
                     handled: true,
-                    result: Some("decline".to_string()),
+                    result: Some(decision.to_string()),
                     error: None,
                 }));
             self.emit_state();
@@ -1113,6 +1114,19 @@ fn describe_account(account: Option<&Value>) -> String {
 
 fn is_server_request(message: &Value) -> bool {
     message.get("id").is_some() && message.get("method").and_then(Value::as_str).is_some()
+}
+
+fn auto_approval_decision(params: &Value) -> &'static str {
+    if let Some(decisions) = params.get("availableDecisions").and_then(Value::as_array) {
+        if decisions
+            .iter()
+            .any(|decision| decision.as_str() == Some("acceptForSession"))
+        {
+            return "acceptForSession";
+        }
+    }
+
+    "accept"
 }
 
 fn is_response(message: &Value) -> bool {

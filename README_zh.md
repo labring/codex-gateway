@@ -76,7 +76,8 @@ API 文档： [docs/api.md](./docs/api.md)
 
 ### 当前 PoC 行为
 
-- 审批请求仍然会被自动拒绝
+- `codex app-server` 会以 `sandbox_mode="danger-full-access"` 和 `approval_policy="never"` 启动
+- 如果命令执行或文件修改审批请求仍然出现，Gateway 会自动接受
 - 不支持的 server 发起请求会被拒绝
 - session 状态只存在内存里，不持久化
 - gateway 鉴权是可选的，只有设置 `CODEX_GATEWAY_JWT_SECRET` 时才会开启
@@ -241,6 +242,6 @@ docker run --rm \
 
 - 没有内建限流
 - 没有持久化 session
-- 没有审批 UI
+- 没有审批 UI，因为当前 Gateway 默认使用最高权限
 - 每个活跃 session 都会占用一个 `codex app-server` 子进程
 - 浏览器刷新后不会自动恢复原 session，除非调用方自己保存 `sessionId`

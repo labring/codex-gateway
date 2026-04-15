@@ -36,6 +36,20 @@ pub fn get_codex_config_args() -> Vec<String> {
     args
 }
 
+pub fn get_codex_app_server_config_args() -> Vec<String> {
+    let mut args = get_codex_config_args();
+
+    args.push("-c".to_string());
+    args.push(format!(
+        "sandbox_mode={}",
+        toml_string("danger-full-access")
+    ));
+    args.push("-c".to_string());
+    args.push(format!("approval_policy={}", toml_string("never")));
+
+    args
+}
+
 pub fn maybe_login_with_api_key(codex_bin: &str) -> Result<bool, RuntimeError> {
     let Some(api_key) = read_env(OPENAI_API_KEY_ENV) else {
         return Ok(false);

@@ -2,7 +2,7 @@ import { spawn } from "node:child_process";
 import { EventEmitter } from "node:events";
 import readline from "node:readline";
 import process from "node:process";
-import { getCodexConfigArgs } from "./codex-runtime.mjs";
+import { getCodexAppServerConfigArgs } from "./codex-runtime.mjs";
 import { buildCodexChildEnv, ENV_NAMES, readBooleanFlag, readEnv } from "./env-config.mjs";
 
 const MAX_EVENTS = 120;
@@ -19,6 +19,13 @@ function preview(value, limit = 120) {
   }
 
   return compact.length > limit ? `${compact.slice(0, limit - 1)}…` : compact;
+}
+
+function autoApprovalDecision(params) {
+  return Array.isArray(params?.availableDecisions) &&
+    params.availableDecisions.includes("acceptForSession")
+    ? "acceptForSession"
+    : "accept";
 }
 
 function clone(value) {
@@ -76,7 +83,7 @@ export class CodexAppServerBridge extends EventEmitter {
 
     this.startTimestamp = new Date().toISOString();
 
-    this.child = spawn(this.codexBin, ["app-server", ...getCodexConfigArgs()], {
+    this.child = spawn(this.codexBin, ["app-server", ...getCodexAppServerConfigArgs()], {
       cwd: this.cwd,
       env: buildCodexChildEnv(),
       stdio: ["pipe", "pipe", "inherit"],
@@ -231,22 +238,23 @@ export class CodexAppServerBridge extends EventEmitter {
       method === "item/commandExecution/requestApproval" ||
       method === "item/fileChange/requestApproval"
     ) {
-      this.send({ id, result: "decline" });
+      const decision = autoApprovalDecision(params);
+      this.send({ id, result: decision });
       this.recordSummaryEvent({
         type: "serverRequest",
         method,
-        status: "auto-declined",
+        status: "auto-accepted",
         itemType: method.includes("commandExecution")
           ? "commandExecution"
           : "fileChange",
         textPreview: preview(params.reason) ?? preview(params.command) ?? preview(params.cwd),
       });
-      this.pushSystemNote(`Auto-declined ${method} in the gateway web UI.`);
+      this.pushSystemNote(`Auto-accepted ${method} in the gateway web UI.`);
       this.emit("serverRequest", {
         method,
         params,
         handled: true,
-        result: "decline",
+        result: decision,
       });
       this.emitState();
       return;

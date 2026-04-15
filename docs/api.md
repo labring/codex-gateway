@@ -178,7 +178,7 @@ data: {...}
 | `session` | 当前 session metadata。连接建立时发送。 |
 | `state` | 当前 bridge 状态快照。状态变化时发送。 |
 | `notification` | `codex app-server` 发来的普通通知。 |
-| `server-request` | `codex app-server` 发起的请求，例如 approval request。当前 approval request 会被自动拒绝。 |
+| `server-request` | `codex app-server` 发起的请求，例如 approval request。当前命令执行和文件修改 approval request 会被自动接受。 |
 | `warning` | gateway 或 bridge 产生的警告。 |
 | `raw` | 原始 app-server 消息。仅在 `CODEX_GATEWAY_DEBUG=1` 时可能出现。 |
 | `session-closed` | session 被关闭、过期或 gateway shutdown。 |
