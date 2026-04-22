@@ -42,7 +42,6 @@ flowchart LR
 | Runtime / Env Config | 读取 `CODEX_GATEWAY_*` 配置，处理 API key 登录、base URL 覆盖、Codex 子进程环境变量。 | `rust-src/config.rs`, `rust-src/env_config.rs`, `rust-src/runtime.rs` |
 | CLI Smoke Test | 本地一次性验证链路：启动 bridge、发 prompt、等待结果。 | `rust-src/cli.rs` |
 | Docker / CI | 构建 Rust 二进制、安装 Codex CLI、发布容器镜像。 | `Dockerfile`, `.github/workflows/container.yml` |
-| Old Node Implementation | 上一版 Node 实现，目前主要作为迁移参考，不是当前主运行路径。 | `src/*.mjs` |
 
 ## One Sentence
 
