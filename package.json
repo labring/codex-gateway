@@ -1,6 +1,6 @@
 {
   "name": "codex-gateway",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "private": true,
   "description": "Minimal multi-session HTTP/SSE gateway for codex app-server, now implemented in Rust.",
   "scripts": {

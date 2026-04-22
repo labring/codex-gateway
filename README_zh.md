@@ -209,13 +209,13 @@ docker run --rm \
 
 ## GitHub Container Registry
 
-GitHub Actions 可以在推送到 `main` 以及版本 tag（例如 `v0.5.0`）后，把镜像发布到 GHCR。
+GitHub Actions 可以在推送到 `main` 以及版本 tag（例如 `v0.5.1`）后，把镜像发布到 GHCR。
 
 发布出来的 tag 规则：
 
 - `ghcr.io/labring/codex-gateway:main` 表示当前 `main` 分支最新镜像
 - `ghcr.io/labring/codex-gateway:sha-<commit>` 表示每次发布对应的提交镜像
-- 推送版本 tag 时，会额外发布 `v0.5.0`、`0.5.0`、`0.5`、`0` 和 `latest`
+- 推送版本 tag 时，会额外发布 `v0.5.1`、`0.5.1`、`0.5`、`0` 和 `latest`
 
 拉取当前 `main` 镜像：
 
