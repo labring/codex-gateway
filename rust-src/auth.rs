@@ -86,3 +86,63 @@ fn validate_jwt(auth: &AuthConfig, token: &str) -> Result<(), AppError> {
     .map(|_| ())
     .map_err(|error| AppError::unauthorized(format!("Invalid bearer token: {error}")))
 }
+
+#[cfg(test)]
+mod tests {
+    use axum::http::HeaderValue;
+    use jsonwebtoken::{EncodingKey, Header, encode};
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn bearer_token_extracts_trimmed_token() {
+        let header = HeaderValue::from_static("Bearer token-value ");
+
+        assert_eq!(bearer_token(Some(&header)), Some("token-value".to_string()));
+    }
+
+    #[test]
+    fn bearer_token_rejects_missing_or_empty_bearer() {
+        let wrong_scheme = HeaderValue::from_static("Basic token-value");
+        let empty = HeaderValue::from_static("Bearer   ");
+
+        assert_eq!(bearer_token(Some(&wrong_scheme)), None);
+        assert_eq!(bearer_token(Some(&empty)), None);
+        assert_eq!(bearer_token(None), None);
+    }
+
+    #[test]
+    fn validate_jwt_accepts_hs256_token_with_exp() {
+        let auth = AuthConfig {
+            jwt_secret: "secret".to_string(),
+        };
+        let claims = json!({
+            "exp": 4_102_444_800_i64
+        });
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(auth.jwt_secret.as_bytes()),
+        )
+        .unwrap();
+
+        assert!(validate_jwt(&auth, &token).is_ok());
+    }
+
+    #[test]
+    fn validate_jwt_rejects_token_without_exp() {
+        let auth = AuthConfig {
+            jwt_secret: "secret".to_string(),
+        };
+        let claims = json!({});
+        let token = encode(
+            &Header::new(Algorithm::HS256),
+            &claims,
+            &EncodingKey::from_secret(auth.jwt_secret.as_bytes()),
+        )
+        .unwrap();
+
+        assert!(validate_jwt(&auth, &token).is_err());
+    }
+}
