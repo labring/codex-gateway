@@ -145,7 +145,7 @@ pub struct WarningEvent {
 
 #[derive(Debug, Clone)]
 pub enum BridgeEvent {
-    State(BridgeStateSnapshot),
+    State(Box<BridgeStateSnapshot>),
     Notification(Value),
     ServerRequest(ServerRequestEvent),
     Warning(WarningEvent),

@@ -25,7 +25,7 @@ pub fn get_codex_config_args() -> Vec<String> {
     let has_api_key = read_env(OPENAI_API_KEY_ENV).is_some();
 
     if let Some(base_url) = base_url.as_deref() {
-        args.extend(get_custom_provider_config_args(&base_url));
+        args.extend(get_custom_provider_config_args(base_url));
     }
 
     if base_url.is_some() || has_api_key {
