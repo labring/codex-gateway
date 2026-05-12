@@ -331,8 +331,8 @@ impl SessionManager {
         let manager = self.clone();
         tokio::spawn(async move {
             info!(
-                session_sweep_interval_ms = manager.inner.config.session_sweep_interval.as_millis()
-                    as u64,
+                session_sweep_interval_ms =
+                    manager.inner.config.session_sweep_interval.as_millis() as u64,
                 "session sweeper started"
             );
             loop {

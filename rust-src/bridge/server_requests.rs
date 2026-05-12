@@ -265,13 +265,12 @@ Return to the caller and use system runtimes directly if possible.\n\nDetected r
 }
 
 pub(super) fn auto_approval_decision(params: &Value) -> &'static str {
-    if let Some(decisions) = params.get("availableDecisions").and_then(Value::as_array) {
-        if decisions
+    if let Some(decisions) = params.get("availableDecisions").and_then(Value::as_array)
+        && decisions
             .iter()
             .any(|decision| decision.as_str() == Some("acceptForSession"))
-        {
-            return "acceptForSession";
-        }
+    {
+        return "acceptForSession";
     }
 
     "accept"

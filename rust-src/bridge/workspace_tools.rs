@@ -1,10 +1,10 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::Path;
 use std::process::{Command, Stdio};
 
 use serde_json::{Value, json};
 
-pub(super) fn workspace_dependency_report(cwd: &PathBuf) -> Value {
+pub(super) fn workspace_dependency_report(cwd: &Path) -> Value {
     let python = resolve_executable("python3").or_else(|| resolve_executable("python"));
     let python_modules = python
         .as_ref()

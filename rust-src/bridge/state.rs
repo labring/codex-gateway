@@ -35,7 +35,10 @@ impl CodexAppServerBridge {
 
     pub(super) fn emit_state(&self) {
         self.touch_activity();
-        let _ = self.inner.events.send(BridgeEvent::State(self.get_state()));
+        let _ = self
+            .inner
+            .events
+            .send(BridgeEvent::State(Box::new(self.get_state())));
     }
 
     pub(super) fn with_state<T>(&self, mutator: impl FnOnce(&mut BridgeStateSnapshot) -> T) -> T {

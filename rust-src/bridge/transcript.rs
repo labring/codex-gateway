@@ -96,10 +96,10 @@ pub(super) fn transcript_from_thread(thread: &Value) -> Vec<TranscriptEntry> {
 
 pub(super) fn extract_delta_text(params: &Value) -> String {
     for key in ["delta", "text", "textDelta", "chunk", "content"] {
-        if let Some(value) = params.get(key).and_then(Value::as_str) {
-            if !value.is_empty() {
-                return value.to_string();
-            }
+        if let Some(value) = params.get(key).and_then(Value::as_str)
+            && !value.is_empty()
+        {
+            return value.to_string();
         }
     }
 
