@@ -220,15 +220,14 @@ fn wait_for_gateway(child: &mut Child, port: u16) -> Result<(), String> {
             return Err(format!("gateway exited before readiness: {status}"));
         }
 
-        if let Ok((status, body)) = http_request(port, "GET", "/healthz", None) {
-            if status == 200
-                && serde_json::from_str::<Value>(&body)
-                    .ok()
-                    .and_then(|payload| payload.get("ok").and_then(Value::as_bool))
-                    == Some(true)
-            {
-                return Ok(());
-            }
+        if let Ok((status, body)) = http_request(port, "GET", "/healthz", None)
+            && status == 200
+            && serde_json::from_str::<Value>(&body)
+                .ok()
+                .and_then(|payload| payload.get("ok").and_then(Value::as_bool))
+                == Some(true)
+        {
+            return Ok(());
         }
 
         if Instant::now() >= deadline {

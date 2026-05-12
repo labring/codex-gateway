@@ -96,7 +96,7 @@ async fn bridge_reads_and_resumes_thread_history_against_fake_app_server() {
 
     assert_eq!(state.thread_id.as_deref(), Some("thread-resume"));
     assert_eq!(state.selected_model.as_deref(), Some("fake-model"));
-    assert_eq!(state.active_turn, false);
+    assert!(!state.active_turn);
     assert!(state.transcript.iter().any(|entry| {
         entry.id == "resume-user" && entry.role == "user" && entry.text == "resumed user"
     }));
