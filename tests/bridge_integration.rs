@@ -33,6 +33,15 @@ async fn bridge_runs_prompt_round_trip_against_fake_app_server() {
     .expect("turn/start returns")
     .expect("turn/start succeeds");
 
+    let turn = bridge
+        .wait_for_turn_completion(Duration::from_secs(5))
+        .await
+        .expect("turn completion is observed");
+    assert_eq!(
+        turn.get("status").and_then(serde_json::Value::as_str),
+        Some("completed")
+    );
+
     let completed = wait_for_state(&bridge, |state| {
         !state.active_turn
             && state

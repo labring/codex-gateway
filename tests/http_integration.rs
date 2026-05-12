@@ -125,35 +125,51 @@ struct GatewayProcess {
 impl GatewayProcess {
     fn start() -> Self {
         let fake_codex = fake_codex::build();
-        let port = free_port();
-        let codex_home = temp_dir("codex-gateway-http-codex-home");
-        fs::create_dir_all(&codex_home).expect("create codex home");
+        let mut last_error = String::new();
 
-        let mut child = Command::new(env!("CARGO_BIN_EXE_codex-gateway"))
-            .env("CODEX_GATEWAY_HOST", "127.0.0.1")
-            .env("CODEX_GATEWAY_PORT", port.to_string())
-            .env("CODEX_GATEWAY_CODEX_BIN", fake_codex.binary())
-            .env("CODEX_GATEWAY_CWD", std::env::current_dir().expect("cwd"))
-            .env("CODEX_GATEWAY_CODEX_HOME", &codex_home)
-            .env("CODEX_GATEWAY_MAX_SESSIONS", "4")
-            .env("CODEX_GATEWAY_SESSION_TTL_MS", "60000")
-            .env("CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS", "60000")
-            .env_remove("CODEX_GATEWAY_OPENAI_API_KEY")
-            .env_remove("CODEX_GATEWAY_OPENAI_BASE_URL")
-            .env_remove("CODEX_GATEWAY_JWT_SECRET")
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("spawn gateway");
+        for _ in 0..5 {
+            let port = free_port();
+            let codex_home = temp_dir("codex-gateway-http-codex-home");
+            fs::create_dir_all(&codex_home).expect("create codex home");
 
-        wait_for_gateway(&mut child, port);
+            let mut child = Command::new(env!("CARGO_BIN_EXE_codex-gateway"))
+                .env("CODEX_GATEWAY_HOST", "127.0.0.1")
+                .env("CODEX_GATEWAY_PORT", port.to_string())
+                .env("CODEX_GATEWAY_CODEX_BIN", fake_codex.binary())
+                .env("CODEX_GATEWAY_CWD", std::env::current_dir().expect("cwd"))
+                .env("CODEX_GATEWAY_CODEX_HOME", &codex_home)
+                .env("CODEX_GATEWAY_MAX_SESSIONS", "4")
+                .env("CODEX_GATEWAY_SESSION_TTL_MS", "60000")
+                .env("CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS", "60000")
+                .env_remove("CODEX_GATEWAY_MODEL")
+                .env_remove("CODEX_GATEWAY_DEBUG")
+                .env_remove("CODEX_GATEWAY_OPENAI_API_KEY")
+                .env_remove("CODEX_GATEWAY_OPENAI_BASE_URL")
+                .env_remove("CODEX_GATEWAY_JWT_SECRET")
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .expect("spawn gateway");
 
-        Self {
-            child,
-            port,
-            codex_home,
-            _fake_codex: fake_codex,
+            match wait_for_gateway(&mut child, port) {
+                Ok(()) => {
+                    return Self {
+                        child,
+                        port,
+                        codex_home,
+                        _fake_codex: fake_codex,
+                    };
+                }
+                Err(error) => {
+                    last_error = error;
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    let _ = fs::remove_dir_all(&codex_home);
+                }
+            }
         }
+
+        panic!("failed to start gateway after retries: {last_error}");
     }
 
     fn json_request(&mut self, method: &str, path: &str, body: Option<&str>) -> (u16, Value) {
@@ -197,11 +213,11 @@ impl Drop for GatewayProcess {
     }
 }
 
-fn wait_for_gateway(child: &mut Child, port: u16) {
+fn wait_for_gateway(child: &mut Child, port: u16) -> Result<(), String> {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
         if let Some(status) = child.try_wait().expect("gateway status") {
-            panic!("gateway exited before readiness: {status}");
+            return Err(format!("gateway exited before readiness: {status}"));
         }
 
         if let Ok((status, body)) = http_request(port, "GET", "/healthz", None) {
@@ -211,12 +227,12 @@ fn wait_for_gateway(child: &mut Child, port: u16) {
                     .and_then(|payload| payload.get("ok").and_then(Value::as_bool))
                     == Some(true)
             {
-                return;
+                return Ok(());
             }
         }
 
         if Instant::now() >= deadline {
-            panic!("timed out waiting for gateway on port {port}");
+            return Err(format!("timed out waiting for gateway on port {port}"));
         }
         std::thread::sleep(Duration::from_millis(20));
     }

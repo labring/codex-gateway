@@ -585,14 +585,13 @@ impl CodexAppServerBridge {
     }
 
     pub async fn wait_for_turn_completion(&self, timeout: Duration) -> Result<Value, AppError> {
+        let mut receiver = self.subscribe();
+
         let state = self.get_state();
         if !state.active_turn {
-            return Ok(json!({
-                "status": state.last_turn_status
-            }));
+            return Ok(turn_result_from_state(&state));
         }
 
-        let mut receiver = self.subscribe();
         let result = tokio::time::timeout(timeout, async move {
             loop {
                 match receiver.recv().await {
@@ -603,6 +602,11 @@ impl CodexAppServerBridge {
                                 .and_then(|params| params.get("turn"))
                                 .cloned()
                                 .unwrap_or_else(|| json!({})));
+                        }
+                    }
+                    Ok(BridgeEvent::State(state)) => {
+                        if !state.active_turn {
+                            return Ok(turn_result_from_state(&state));
                         }
                     }
                     Ok(_) => {}
@@ -643,6 +647,12 @@ impl CodexAppServerBridge {
                 reason: reason.to_string(),
             }));
     }
+}
+
+fn turn_result_from_state(state: &BridgeStateSnapshot) -> Value {
+    json!({
+        "status": state.last_turn_status
+    })
 }
 
 fn describe_account(account: Option<&Value>) -> String {
