@@ -1,0 +1,1496 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Five Sage workbench product polish directions for the Codex Gateway demo."
+    />
+    <title>Codex Gateway Sage polish gallery</title>
+    <style>
+      :root {
+        --font-sans:
+          "Aptos", "SF Pro Display", "Segoe UI Variable", "Segoe UI", system-ui,
+          sans-serif;
+        --font-mono:
+          "JetBrains Mono", "SF Mono", "IBM Plex Mono", "Menlo", monospace;
+        --font-serif: "Newsreader", "Iowan Old Style", "Charter", Georgia, serif;
+        --page-bg: #f4f1eb;
+        --ink: #191817;
+        --muted: #6f6a63;
+        --line: rgba(25, 24, 23, 0.11);
+        --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        overflow-x: hidden;
+        scroll-behavior: smooth;
+      }
+
+      body {
+        background:
+          linear-gradient(rgba(25, 24, 23, 0.026) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(25, 24, 23, 0.026) 1px, transparent 1px),
+          var(--page-bg);
+        background-size: 34px 34px;
+        color: var(--ink);
+        font-family: var(--font-sans);
+        margin: 0;
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: geometricPrecision;
+      }
+
+      button,
+      input,
+      textarea,
+      select {
+        font: inherit;
+      }
+
+      button,
+      summary {
+        cursor: default;
+      }
+
+      a {
+        color: inherit;
+        text-decoration: none;
+      }
+
+      button {
+        align-items: center;
+        border: 0;
+        display: inline-flex;
+        font-weight: 700;
+        gap: 0.5rem;
+        justify-content: center;
+        transition:
+          transform 220ms var(--ease),
+          background 220ms var(--ease),
+          color 220ms var(--ease),
+          border-color 220ms var(--ease);
+      }
+
+      button:active {
+        transform: scale(0.98);
+      }
+
+      button:focus-visible,
+      summary:focus-visible,
+      a:focus-visible {
+        outline: 2px solid currentColor;
+        outline-offset: 3px;
+      }
+
+      .gallery-nav {
+        align-items: center;
+        background: rgba(244, 241, 235, 0.86);
+        border: 1px solid rgba(25, 24, 23, 0.08);
+        border-radius: 999px;
+        box-shadow: 0 18px 50px rgba(61, 47, 31, 0.08);
+        display: flex;
+        gap: 0.35rem;
+        left: 50%;
+        padding: 0.42rem;
+        position: fixed;
+        top: 1rem;
+        transform: translateX(-50%);
+        z-index: 20;
+      }
+
+      .gallery-nav a {
+        border-radius: 999px;
+        color: #4c4740;
+        font-size: 0.74rem;
+        font-weight: 750;
+        padding: 0.55rem 0.78rem;
+        white-space: nowrap;
+      }
+
+      .gallery-nav a:hover {
+        background: rgba(25, 24, 23, 0.07);
+      }
+
+      .intro {
+        display: grid;
+        gap: 2rem;
+        grid-template-columns: minmax(0, 1.1fr) minmax(280px, 0.72fr);
+        margin: 0 auto;
+        max-width: 1280px;
+        min-height: 68dvh;
+        padding: 8rem 2rem 4rem;
+      }
+
+      .kicker {
+        color: #777168;
+        font-family: var(--font-mono);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.15em;
+        margin-bottom: 0.72rem;
+        text-transform: uppercase;
+      }
+
+      .intro h1 {
+        font-family: var(--font-serif);
+        font-size: clamp(3rem, 8vw, 7rem);
+        letter-spacing: -0.065em;
+        line-height: 0.9;
+        margin: 0;
+        max-width: 11ch;
+        text-wrap: balance;
+      }
+
+      .principles {
+        align-self: center;
+        background: #fffdf9;
+        border: 1px solid rgba(25, 24, 23, 0.09);
+        border-radius: 18px;
+        box-shadow: 0 28px 80px rgba(79, 61, 42, 0.12);
+        padding: 1.35rem;
+      }
+
+      .principles h2 {
+        font-size: 0.84rem;
+        letter-spacing: 0.12em;
+        margin: 0 0 1rem;
+        text-transform: uppercase;
+      }
+
+      .principles ul {
+        color: var(--muted);
+        display: grid;
+        gap: 0.75rem;
+        line-height: 1.55;
+        margin: 0;
+        padding-left: 1.05rem;
+      }
+
+      .section {
+        border-top: 1px solid rgba(25, 24, 23, 0.12);
+        padding: 4rem 1.2rem;
+      }
+
+      .section-head {
+        display: grid;
+        gap: 1rem;
+        grid-template-columns: minmax(0, 0.78fr) minmax(280px, 0.45fr);
+        margin: 0 auto 1.4rem;
+        max-width: 1360px;
+      }
+
+      .section-head h2 {
+        font-size: clamp(2rem, 5vw, 4.15rem);
+        letter-spacing: -0.055em;
+        line-height: 0.98;
+        margin: 0;
+      }
+
+      .section-head p {
+        color: var(--muted);
+        line-height: 1.65;
+        margin: 0;
+        max-width: 45rem;
+      }
+
+      .desk {
+        --desk-bg: #fbfaf7;
+        --desk-fg: #20231f;
+        --desk-muted: #74766d;
+        --desk-line: rgba(32, 35, 31, 0.1);
+        --desk-panel: rgba(255, 255, 255, 0.66);
+        --desk-panel-strong: #fffefa;
+        --desk-active: rgba(32, 35, 31, 0.09);
+        --desk-button: rgba(32, 35, 31, 0.07);
+        --desk-accent: #20231f;
+        --desk-accent-fg: #fffefa;
+        --desk-good: #476a51;
+        --desk-radius: 30px;
+        --desk-inner-radius: 14px;
+        --desk-shadow: 0 34px 110px rgba(85, 76, 61, 0.16);
+        background: var(--desk-bg);
+        border: 1px solid var(--desk-line);
+        border-radius: var(--desk-radius);
+        box-shadow: var(--desk-shadow);
+        color: var(--desk-fg);
+        display: grid;
+        grid-template-columns: 300px minmax(0, 1fr);
+        margin: 0 auto;
+        max-width: 1360px;
+        min-height: 760px;
+        overflow: hidden;
+        padding: 1.15rem;
+        position: relative;
+      }
+
+      .desk-sidebar {
+        border-right: 1px solid var(--desk-line);
+        display: grid;
+        grid-template-rows: auto auto 1fr auto;
+        min-width: 0;
+        padding-right: 1rem;
+      }
+
+      .desk-brand {
+        align-items: center;
+        display: flex;
+        gap: 0.7rem;
+        min-width: 0;
+        padding-bottom: 1rem;
+      }
+
+      .desk-mark {
+        background: var(--desk-accent);
+        border-radius: calc(var(--desk-inner-radius) - 4px);
+        color: var(--desk-accent-fg);
+        display: grid;
+        flex: 0 0 auto;
+        font-family: var(--font-mono);
+        font-weight: 900;
+        height: 2.4rem;
+        place-items: center;
+        width: 2.4rem;
+      }
+
+      .desk-brand strong,
+      .chat-title strong {
+        display: block;
+      }
+
+      .desk-brand span,
+      .chat-title span {
+        color: var(--desk-muted);
+        display: block;
+        font-size: 0.78rem;
+      }
+
+      .status {
+        align-items: center;
+        display: inline-flex;
+        gap: 0.42rem;
+      }
+
+      .status::before {
+        background: currentColor;
+        border-radius: 999px;
+        content: "";
+        height: 0.46rem;
+        width: 0.46rem;
+      }
+
+      .sidebar-actions {
+        display: grid;
+        gap: 0.55rem;
+        margin-bottom: 1rem;
+      }
+
+      .desk button {
+        background: var(--desk-button);
+        border-radius: var(--desk-inner-radius);
+        color: var(--desk-fg);
+        padding: 0.72rem 0.86rem;
+      }
+
+      .desk .primary {
+        background: var(--desk-accent);
+        color: var(--desk-accent-fg);
+      }
+
+      .sidebar-actions button {
+        justify-content: flex-start;
+        width: 100%;
+      }
+
+      .conversation-list {
+        display: grid;
+        gap: 0.35rem;
+        min-height: 0;
+        overflow: auto;
+        padding: 0.15rem 0.25rem 0.15rem 0;
+      }
+
+      .conversation-group {
+        display: grid;
+        gap: 0.35rem;
+        margin-bottom: 0.85rem;
+      }
+
+      .conversation-group-title {
+        color: var(--desk-muted);
+        font-family: var(--font-mono);
+        font-size: 0.66rem;
+        font-weight: 850;
+        letter-spacing: 0.12em;
+        margin: 0.4rem 0 0.15rem;
+        text-transform: uppercase;
+      }
+
+      .conversation-item {
+        background: transparent;
+        border: 0;
+        border-radius: var(--desk-inner-radius);
+        color: var(--desk-muted);
+        align-items: start;
+        display: grid;
+        gap: 0.22rem;
+        justify-content: stretch;
+        justify-items: stretch;
+        padding: 0.75rem 0.8rem;
+        text-align: left;
+        width: 100%;
+      }
+
+      .conversation-item strong,
+      .conversation-item span {
+        justify-self: start;
+        display: block;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .conversation-item strong {
+        color: var(--desk-fg);
+        font-size: 0.9rem;
+      }
+
+      .conversation-item span {
+        color: var(--desk-muted);
+        font-size: 0.78rem;
+      }
+
+      .conversation-item.active {
+        background: var(--desk-active);
+      }
+
+      .sidebar-footer {
+        border-top: 1px solid var(--desk-line);
+        color: var(--desk-muted);
+        display: grid;
+        gap: 0.35rem;
+        padding-top: 0.85rem;
+      }
+
+      .sidebar-footer strong {
+        color: var(--desk-fg);
+      }
+
+      .desk-main {
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        min-width: 0;
+        padding-left: 1rem;
+      }
+
+      .chat-topbar {
+        align-items: center;
+        border-bottom: 1px solid var(--desk-line);
+        display: flex;
+        gap: 0.8rem;
+        justify-content: space-between;
+        min-width: 0;
+        padding-bottom: 1rem;
+      }
+
+      .top-actions {
+        align-items: center;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        justify-content: flex-end;
+      }
+
+      .chat-stage {
+        align-content: center;
+        display: grid;
+        gap: 1rem;
+        margin: 0 auto;
+        max-width: 840px;
+        min-width: 0;
+        padding: 3rem 0;
+        width: 100%;
+      }
+
+      .message {
+        background: var(--desk-panel);
+        border: 1px solid var(--desk-line);
+        border-radius: calc(var(--desk-inner-radius) + 4px);
+        display: grid;
+        gap: 0.5rem;
+        line-height: 1.62;
+        min-width: 0;
+        padding: 1rem;
+      }
+
+      .message small {
+        color: var(--desk-muted);
+        font-family: var(--font-mono);
+        font-size: 0.68rem;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .message.assistant {
+        background: var(--desk-accent);
+        color: var(--desk-accent-fg);
+        margin-left: 4rem;
+      }
+
+      .message.assistant small {
+        color: inherit;
+        opacity: 0.7;
+      }
+
+      .composer {
+        background: var(--desk-panel-strong);
+        border: 1px solid var(--desk-line);
+        border-radius: calc(var(--desk-inner-radius) + 6px);
+        display: grid;
+        gap: 0.72rem;
+        min-width: 0;
+        padding: 0.85rem;
+      }
+
+      .composer-box {
+        color: var(--desk-muted);
+        min-width: 0;
+        padding: 0.6rem 0.2rem;
+        width: 100%;
+      }
+
+      .composer-meta {
+        align-items: center;
+        color: var(--desk-muted);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.6rem;
+        justify-content: space-between;
+      }
+
+      .debug-closed {
+        background: var(--desk-panel);
+        border: 1px solid var(--desk-line);
+        border-radius: var(--desk-inner-radius);
+        color: var(--desk-muted);
+        margin-top: 1rem;
+        padding: 0.9rem;
+      }
+
+      .debug-closed summary {
+        align-items: center;
+        display: flex;
+        font-weight: 750;
+        justify-content: space-between;
+        list-style: none;
+      }
+
+      .debug-closed summary::-webkit-details-marker {
+        display: none;
+      }
+
+      .debug-grid {
+        display: grid;
+        gap: 0.6rem;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        margin-top: 0.8rem;
+      }
+
+      .debug-item {
+        min-width: 0;
+      }
+
+      .debug-item span {
+        display: block;
+        font-size: 0.68rem;
+        opacity: 0.62;
+      }
+
+      .debug-item strong {
+        color: var(--desk-fg);
+        display: block;
+        overflow-wrap: anywhere;
+      }
+
+      .mono {
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+      }
+
+      .sage {
+        --desk-bg:
+          linear-gradient(180deg, rgba(251, 250, 247, 0.96), rgba(244, 246, 239, 0.96)),
+          #fbfaf7;
+        --desk-accent: #20231f;
+        --desk-accent-fg: #fffefa;
+        --desk-line: rgba(32, 35, 31, 0.13);
+        --desk-panel: rgba(255, 255, 255, 0.62);
+        --desk-panel-strong: #fffefa;
+        --desk-active: rgba(32, 35, 31, 0.085);
+        --desk-button: rgba(32, 35, 31, 0.055);
+        --desk-good: #476a51;
+      }
+
+      .sage .desk-sidebar {
+        background:
+          linear-gradient(180deg, rgba(235, 238, 228, 0.92), rgba(247, 246, 240, 0.74));
+        border-radius: 18px 0 0 18px;
+        border-right-color: rgba(32, 35, 31, 0.17);
+        box-shadow: inset -1px 0 rgba(255, 255, 255, 0.62);
+        margin: -0.35rem 0 -0.35rem -0.35rem;
+        padding: 0.95rem 0.9rem 0.95rem 0.95rem;
+      }
+
+      .sage .desk-brand {
+        border-bottom: 1px solid rgba(32, 35, 31, 0.14);
+        margin-bottom: 0.75rem;
+        padding-bottom: 0.85rem;
+      }
+
+      .sage .desk-mark {
+        border-radius: 7px;
+        height: 2.25rem;
+        width: 2.25rem;
+      }
+
+      .sage .sidebar-actions {
+        gap: 0.42rem;
+        margin-bottom: 0.95rem;
+      }
+
+      .sage .sidebar-actions button {
+        border: 1px solid rgba(32, 35, 31, 0.1);
+        border-radius: 8px;
+        min-height: 2.45rem;
+        padding: 0.58rem 0.68rem;
+      }
+
+      .sage .sidebar-actions button:first-child {
+        background: var(--desk-accent);
+        color: var(--desk-accent-fg);
+      }
+
+      .sage .sidebar-actions button:last-child {
+        background: rgba(255, 254, 250, 0.46);
+      }
+
+      .sage .conversation-list {
+        gap: 0.18rem;
+        padding-right: 0.15rem;
+      }
+
+      .sage .conversation-group {
+        gap: 0.18rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .sage .conversation-group-title {
+        color: rgba(32, 35, 31, 0.58);
+        font-size: 0.62rem;
+        margin: 0.5rem 0 0.28rem;
+        padding: 0 0.55rem;
+      }
+
+      .sage .conversation-item {
+        border: 1px solid transparent;
+        border-left: 2px solid transparent;
+        border-radius: 7px;
+        gap: 0.16rem;
+        padding: 0.58rem 0.62rem 0.6rem 0.68rem;
+      }
+
+      .sage .conversation-item:hover {
+        background: rgba(32, 35, 31, 0.045);
+      }
+
+      .sage .conversation-item.active {
+        background: var(--desk-active);
+        border-color: rgba(32, 35, 31, 0.08);
+        border-left-color: var(--desk-accent);
+      }
+
+      .sage .conversation-item strong {
+        font-size: 0.86rem;
+      }
+
+      .sage .conversation-item span {
+        font-size: 0.74rem;
+      }
+
+      .sage .sidebar-footer {
+        border-top-color: rgba(32, 35, 31, 0.15);
+        gap: 0.25rem;
+        line-height: 1.45;
+        padding: 0.78rem 0.55rem 0;
+      }
+
+      .sage-balanced,
+      .sage-split-action,
+      .sage-status-action,
+      .sage-card-action,
+      .sage-rule-action {
+        font-family: var(--sage-font, var(--font-sans));
+        grid-template-columns: var(--sage-sidebar-width, 300px) minmax(0, 1fr);
+        max-width: var(--sage-max-width, 1360px);
+        min-height: var(--sage-min-height, 760px);
+        padding: var(--sage-shell-pad, 1.15rem);
+      }
+
+      .sage-balanced .desk-sidebar,
+      .sage-split-action .desk-sidebar,
+      .sage-status-action .desk-sidebar,
+      .sage-card-action .desk-sidebar,
+      .sage-rule-action .desk-sidebar {
+        padding: var(--sage-sidebar-pad, 0.95rem 0.9rem 0.95rem 0.95rem);
+      }
+
+      .sage-balanced .desk-main,
+      .sage-split-action .desk-main,
+      .sage-status-action .desk-main,
+      .sage-card-action .desk-main,
+      .sage-rule-action .desk-main {
+        padding-left: var(--sage-main-gap, 1rem);
+      }
+
+      .sage-balanced .chat-topbar,
+      .sage-split-action .chat-topbar,
+      .sage-status-action .chat-topbar,
+      .sage-card-action .chat-topbar,
+      .sage-rule-action .chat-topbar {
+        padding-bottom: var(--sage-topbar-pad, 1rem);
+      }
+
+      .sage-balanced .chat-stage,
+      .sage-split-action .chat-stage,
+      .sage-status-action .chat-stage,
+      .sage-card-action .chat-stage,
+      .sage-rule-action .chat-stage {
+        gap: var(--sage-message-gap, 1rem);
+        max-width: var(--sage-chat-max, 840px);
+        padding: var(--sage-chat-pad, 3rem 0);
+      }
+
+      .sage-balanced .conversation-list,
+      .sage-split-action .conversation-list,
+      .sage-status-action .conversation-list,
+      .sage-card-action .conversation-list,
+      .sage-rule-action .conversation-list {
+        gap: var(--sage-list-gap, 0.18rem);
+        padding-right: 0;
+      }
+
+      .sage-balanced .conversation-group,
+      .sage-split-action .conversation-group,
+      .sage-status-action .conversation-group,
+      .sage-card-action .conversation-group,
+      .sage-rule-action .conversation-group {
+        gap: var(--sage-group-gap, 0.18rem);
+        margin-bottom: var(--sage-group-bottom, 0.75rem);
+      }
+
+      .sage-balanced .conversation-group-title,
+      .sage-split-action .conversation-group-title,
+      .sage-status-action .conversation-group-title,
+      .sage-card-action .conversation-group-title,
+      .sage-rule-action .conversation-group-title {
+        font-size: var(--sage-label-size, 0.62rem);
+        font-weight: var(--sage-label-weight, 850);
+        letter-spacing: var(--sage-label-spacing, 0.12em);
+        margin: var(--sage-label-margin, 0.5rem 0 0.28rem);
+        padding-left: var(--sage-row-left, 0.72rem);
+      }
+
+      .sage-balanced .conversation-item,
+      .sage-split-action .conversation-item,
+      .sage-status-action .conversation-item,
+      .sage-card-action .conversation-item,
+      .sage-rule-action .conversation-item {
+        border-left-width: var(--sage-active-width, 2px);
+        border-radius: var(--sage-row-radius, 7px);
+        gap: var(--sage-row-gap, 0.16rem);
+        min-height: var(--sage-row-height, 4.15rem);
+        padding: var(--sage-row-pad, 0.66rem 0.72rem 0.68rem var(--sage-row-left, 0.72rem));
+      }
+
+      .sage-balanced .conversation-item strong,
+      .sage-split-action .conversation-item strong,
+      .sage-status-action .conversation-item strong,
+      .sage-card-action .conversation-item strong,
+      .sage-rule-action .conversation-item strong {
+        font-size: var(--sage-task-size, 0.86rem);
+        font-weight: var(--sage-task-weight, 780);
+      }
+
+      .sage-balanced .conversation-item span,
+      .sage-split-action .conversation-item span,
+      .sage-status-action .conversation-item span,
+      .sage-card-action .conversation-item span,
+      .sage-rule-action .conversation-item span {
+        font-size: var(--sage-subtitle-size, 0.74rem);
+        font-weight: var(--sage-subtitle-weight, 640);
+      }
+
+      .sage-balanced .message,
+      .sage-split-action .message,
+      .sage-status-action .message,
+      .sage-card-action .message,
+      .sage-rule-action .message {
+        border-radius: var(--sage-message-radius, calc(var(--desk-inner-radius) + 4px));
+        font-size: var(--sage-message-size, 1rem);
+        line-height: var(--sage-message-leading, 1.62);
+        padding: var(--sage-message-pad, 1rem);
+      }
+
+      .sage-balanced .composer,
+      .sage-split-action .composer,
+      .sage-status-action .composer,
+      .sage-card-action .composer,
+      .sage-rule-action .composer {
+        border-radius: var(--sage-composer-radius, calc(var(--desk-inner-radius) + 6px));
+        gap: var(--sage-composer-gap, 0.72rem);
+        padding: var(--sage-composer-pad, 0.85rem);
+      }
+
+      .sage-balanced,
+      .sage-split-action,
+      .sage-status-action,
+      .sage-card-action,
+      .sage-rule-action {
+        --sage-font:
+          "Aptos", "SF Pro Display", "Segoe UI Variable", "Segoe UI", system-ui,
+          sans-serif;
+        --sage-row-left: 0.74rem;
+        --sage-chat-max: 820px;
+        --sage-message-pad: 1rem;
+        --sage-task-weight: 780;
+        --sage-subtitle-weight: 640;
+      }
+
+      .action-note,
+      .action-row {
+        color: var(--desk-muted);
+        font-size: 0.73rem;
+        line-height: 1.45;
+      }
+
+      .action-note {
+        padding: 0 0.12rem;
+      }
+
+      .action-row {
+        align-items: center;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .action-row strong {
+        color: var(--desk-fg);
+        font-weight: 760;
+      }
+
+      .action-panel {
+        background: rgba(255, 254, 250, 0.45);
+        border: 1px solid rgba(32, 35, 31, 0.09);
+        border-radius: 9px;
+        display: grid;
+        gap: 0.46rem;
+        padding: 0.64rem 0.68rem;
+      }
+
+      .action-panel strong {
+        color: var(--desk-fg);
+        font-size: 0.8rem;
+      }
+
+      .sage-split-action .sidebar-actions {
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .sage-split-action .sidebar-actions button {
+        min-height: 2.42rem;
+      }
+
+      .sage-split-action .sidebar-actions .icon-button {
+        justify-content: center;
+        padding: 0;
+        width: 2.42rem;
+      }
+
+      .sage-status-action .sidebar-actions {
+        gap: 0.5rem;
+      }
+
+      .sage-status-action .sidebar-actions button {
+        min-height: 2.5rem;
+      }
+
+      .sage-card-action .sidebar-actions {
+        gap: 0.58rem;
+      }
+
+      .sage-card-action .sidebar-actions button {
+        min-height: 2.48rem;
+      }
+
+      .sage-rule-action .sidebar-actions {
+        border-bottom: 1px solid rgba(32, 35, 31, 0.13);
+        border-top: 1px solid rgba(32, 35, 31, 0.13);
+        gap: 0.5rem;
+        margin-bottom: 1.05rem;
+        padding: 0.62rem 0;
+      }
+
+      .sage-rule-action .sidebar-actions button {
+        background: transparent;
+        border-color: transparent;
+        min-height: 2.2rem;
+        padding-left: 0.12rem;
+      }
+
+      @media (max-width: 900px) {
+        .gallery-nav {
+          border-radius: 18px;
+          display: grid;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+          left: 50%;
+          transform: translateX(-50%);
+          width: calc(100vw - 1.3rem);
+        }
+
+        .gallery-nav a {
+          min-width: 0;
+          text-align: center;
+        }
+
+        .gallery-nav a:last-child {
+          grid-column: 1 / -1;
+        }
+
+        .intro,
+        .section-head,
+        .desk {
+          grid-template-columns: 1fr;
+        }
+
+        .intro {
+          padding-top: 11rem;
+        }
+
+        .desk {
+          min-height: 680px;
+        }
+
+        .desk-sidebar {
+          border-bottom: 1px solid var(--desk-line);
+          border-right: 0;
+          grid-template-rows: auto auto auto;
+          padding-bottom: 1rem;
+          padding-right: 0;
+        }
+
+        .conversation-list {
+          display: flex;
+          gap: 0.5rem;
+          overflow-x: auto;
+          padding-bottom: 0.2rem;
+        }
+
+        .conversation-group {
+          display: contents;
+        }
+
+        .conversation-group-title {
+          display: none;
+        }
+
+        .conversation-item {
+          min-width: 13rem;
+        }
+
+        .sidebar-footer {
+          display: none;
+        }
+
+        .desk-main {
+          padding-left: 0;
+          padding-top: 1rem;
+        }
+
+        .sage .desk-sidebar {
+          border-radius: 18px 18px 0 0;
+          margin: -0.35rem -0.35rem 0;
+          padding: 0.95rem;
+        }
+
+        .sage .conversation-list {
+          gap: 0.45rem;
+          padding-right: 0;
+        }
+
+        .debug-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 640px) {
+        .section {
+          padding: 3rem 0.7rem;
+        }
+
+        .intro {
+          padding-left: 1rem;
+          padding-right: 1rem;
+        }
+
+        .chat-topbar {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .top-actions {
+          justify-content: flex-start;
+        }
+
+        .message.assistant {
+          margin-left: 0;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="gallery-nav" aria-label="Sage action area gallery">
+      <a href="#sage-balanced">Balanced</a>
+      <a href="#sage-split-action">Split</a>
+      <a href="#sage-status-action">Status</a>
+      <a href="#sage-card-action">Card</a>
+      <a href="#sage-rule-action">Rule</a>
+    </nav>
+
+    <header class="intro">
+      <div>
+        <div class="kicker">Codex Gateway Sage action area</div>
+        <h1>One workbench. Five action bars.</h1>
+      </div>
+      <aside class="principles">
+        <h2>What stays constant</h2>
+        <ul>
+          <li>Left sidebar always shows recent conversations.</li>
+          <li>Right pane stays focused on the selected chat and composer.</li>
+          <li>Diagnostics stay folded by default.</li>
+          <li>Only ready/running state and model context remain visible.</li>
+        </ul>
+      </aside>
+    </header>
+
+    <section class="section" id="sage-balanced">
+      <div class="section-head">
+        <div>
+          <div class="kicker">01 / single action with context</div>
+          <h2>Sage workbench note</h2>
+        </div>
+        <p>
+          Removes search and lets the primary action breathe, with a small
+          contextual note taking the place of the second button.
+        </p>
+      </div>
+      <article class="desk sage sage-balanced">
+        <aside class="desk-sidebar" aria-label="Conversation list">
+          <header class="desk-brand">
+            <div class="desk-mark">CG</div>
+            <div>
+              <strong>Codex Gateway</strong>
+              <span class="status" style="color: var(--desk-good)">ready</span>
+            </div>
+          </header>
+          <div class="sidebar-actions">
+            <button type="button">New chat</button>
+            <div class="action-note">Recent conversations update from the current workspace.</div>
+          </div>
+          <nav class="conversation-list" aria-label="Recent conversations">
+            <section class="conversation-group">
+              <div class="conversation-group-title">Today</div>
+              <button class="conversation-item active" type="button">
+                <strong>Repository summary</strong>
+                <span>Rust gateway and built-in web UI</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Frontend redesign</strong>
+                <span>Chat-first layout with diagnostics hidden</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>API smoke test</strong>
+                <span>Reply with exactly ready</span>
+              </button>
+            </section>
+            <section class="conversation-group">
+              <div class="conversation-group-title">Earlier</div>
+              <button class="conversation-item" type="button">
+                <strong>Deployment workflow</strong>
+                <span>GHCR image publishing route</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Bridge protocol notes</strong>
+                <span>thread/start and turn/status events</span>
+              </button>
+            </section>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="mono">5 conversations</span>
+            <strong>Diagnostics are folded in the chat pane.</strong>
+          </footer>
+        </aside>
+        <main class="desk-main">
+          <header class="chat-topbar">
+            <div class="chat-title">
+              <strong>Repository summary</strong>
+              <span class="mono">gpt-5.4</span>
+            </div>
+            <div class="top-actions">
+              <button type="button">Open thread</button>
+              <button class="primary" type="button">Stop turn</button>
+            </div>
+          </header>
+          <section class="chat-stage">
+            <article class="message">
+              <small>user</small>
+              <div>Summarize the repository and keep the answer short.</div>
+            </article>
+            <article class="message assistant">
+              <small>assistant</small>
+              <div>This is a Rust HTTP/SSE gateway around codex app-server. The browser UI should behave like a small chat client.</div>
+            </article>
+          </section>
+          <footer>
+            <form class="composer">
+              <div class="composer-box">Ask Codex about the current workspace...</div>
+              <div class="composer-meta">
+                <span class="mono">full access sandbox</span>
+                <button class="primary" type="button">Send</button>
+              </div>
+            </form>
+            <details class="debug-closed">
+              <summary><span>Diagnostics</span><span class="mono">hidden</span></summary>
+              <div class="debug-grid">
+                <div class="debug-item"><span>session</span><strong class="mono">7f41c9a2</strong></div>
+                <div class="debug-item"><span>thread</span><strong class="mono">thd_92ab18</strong></div>
+                <div class="debug-item"><span>sse</span><strong>streaming</strong></div>
+                <div class="debug-item"><span>cwd</span><strong class="mono">/workspace/codex-gateway</strong></div>
+              </div>
+            </details>
+          </footer>
+        </main>
+      </article>
+    </section>
+
+    <section class="section" id="sage-split-action">
+      <div class="section-head">
+        <div>
+          <div class="kicker">02 / primary action plus compact tool</div>
+          <h2>Sage workbench split</h2>
+        </div>
+        <p>
+          Keeps the main action full-size and moves the secondary affordance
+          into a compact icon-style control.
+        </p>
+      </div>
+      <article class="desk sage sage-split-action">
+        <aside class="desk-sidebar" aria-label="Conversation list">
+          <header class="desk-brand">
+            <div class="desk-mark">CG</div>
+            <div>
+              <strong>Codex Gateway</strong>
+              <span class="status" style="color: var(--desk-good)">ready</span>
+            </div>
+          </header>
+          <div class="sidebar-actions">
+            <button type="button">New chat</button>
+            <button class="icon-button" type="button" aria-label="Conversation filters">K</button>
+          </div>
+          <nav class="conversation-list" aria-label="Recent conversations">
+            <section class="conversation-group">
+              <div class="conversation-group-title">Today</div>
+              <button class="conversation-item active" type="button">
+                <strong>Repository summary</strong>
+                <span>Rust gateway and built-in web UI</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Frontend redesign</strong>
+                <span>Sidebar chat surface</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Thread restore</strong>
+                <span>Resume last Codex history item</span>
+              </button>
+            </section>
+            <section class="conversation-group">
+              <div class="conversation-group-title">Earlier</div>
+              <button class="conversation-item" type="button">
+                <strong>Deployment route</strong>
+                <span>POST /api/deployments behavior</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>JWT setup</strong>
+                <span>Bearer token panel</span>
+              </button>
+            </section>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="mono">5 conversations</span>
+            <strong>Quiet surface for regular use.</strong>
+          </footer>
+        </aside>
+        <main class="desk-main">
+          <header class="chat-topbar">
+            <div class="chat-title">
+              <strong>Repository summary</strong>
+              <span class="mono">gpt-5.4</span>
+            </div>
+            <div class="top-actions">
+              <button type="button">Open thread</button>
+              <button class="primary" type="button">Send</button>
+            </div>
+          </header>
+          <section class="chat-stage">
+            <article class="message">
+              <small>user</small>
+              <div>What should stay visible in the default interface?</div>
+            </article>
+            <article class="message assistant">
+              <small>assistant</small>
+              <div>Keep conversations, the selected chat, composer, model context, and ready state visible. Move raw bridge details into diagnostics.</div>
+            </article>
+          </section>
+          <footer>
+            <form class="composer">
+              <div class="composer-box">Message Codex Gateway...</div>
+              <div class="composer-meta">
+                <span class="mono">ready</span>
+                <button class="primary" type="button">Send</button>
+              </div>
+            </form>
+            <details class="debug-closed">
+              <summary><span>Diagnostics</span><span class="mono">closed</span></summary>
+              <div class="debug-grid">
+                <div class="debug-item"><span>session</span><strong class="mono">7f41c9a2</strong></div>
+                <div class="debug-item"><span>thread</span><strong class="mono">thd_92ab18</strong></div>
+                <div class="debug-item"><span>events</span><strong>30 recent</strong></div>
+                <div class="debug-item"><span>auth</span><strong>bearer configured</strong></div>
+              </div>
+            </details>
+          </footer>
+        </main>
+      </article>
+    </section>
+
+    <section class="section" id="sage-status-action">
+      <div class="section-head">
+        <div>
+          <div class="kicker">03 / action with sidebar status</div>
+          <h2>Sage workbench status</h2>
+        </div>
+        <p>
+          Replaces search with useful state: how many conversations are visible
+          and whether the workspace is ready.
+        </p>
+      </div>
+      <article class="desk sage sage-status-action">
+        <aside class="desk-sidebar" aria-label="Conversation list">
+          <header class="desk-brand">
+            <div class="desk-mark">CG</div>
+            <div>
+              <strong>Codex Gateway</strong>
+              <span class="status" style="color: var(--desk-good)">ready</span>
+            </div>
+          </header>
+          <div class="sidebar-actions">
+            <button type="button">New chat</button>
+            <div class="action-row"><span>Visible</span><strong class="mono">5 threads</strong></div>
+            <div class="action-row"><span>Workspace</span><strong>ready</strong></div>
+          </div>
+          <nav class="conversation-list" aria-label="Recent conversations">
+            <section class="conversation-group">
+              <div class="conversation-group-title">Today</div>
+              <button class="conversation-item active" type="button">
+                <strong>Repository summary</strong>
+                <span>Rust gateway and built-in web UI</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Frontend redesign</strong>
+                <span>Chat-first layout with diagnostics hidden</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>API smoke test</strong>
+                <span>Ready response check</span>
+              </button>
+            </section>
+            <section class="conversation-group">
+              <div class="conversation-group-title">Earlier</div>
+              <button class="conversation-item" type="button">
+                <strong>Bridge protocol</strong>
+                <span>thread/start and turn/status</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Deployment task</strong>
+                <span>Read status from Codex thread</span>
+              </button>
+            </section>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="mono">5 conversations</span>
+            <strong>Inspector hidden until opened.</strong>
+          </footer>
+        </aside>
+        <main class="desk-main">
+          <header class="chat-topbar">
+            <div class="chat-title">
+              <strong>Repository summary</strong>
+              <span class="mono">gpt-5.4</span>
+            </div>
+            <div class="top-actions">
+              <button type="button">Open thread</button>
+              <button class="primary" type="button">Send</button>
+            </div>
+          </header>
+          <section class="chat-stage">
+            <article class="message">
+              <small>user</small>
+              <div>Make the demo feel less like a dashboard.</div>
+            </article>
+            <article class="message assistant">
+              <small>assistant</small>
+              <div>Default to a chat canvas with a conversation rail. Diagnostics can remain accessible, but should not compete with the current message.</div>
+            </article>
+          </section>
+          <footer>
+            <form class="composer">
+              <div class="composer-box">Ask Codex to inspect, edit, or test...</div>
+              <div class="composer-meta">
+                <span class="mono">full access sandbox</span>
+                <button class="primary" type="button">Send</button>
+              </div>
+            </form>
+            <details class="debug-closed">
+              <summary><span>Diagnostics</span><span class="mono">hidden</span></summary>
+              <div class="debug-grid">
+                <div class="debug-item"><span>session</span><strong class="mono">7f41c9a2</strong></div>
+                <div class="debug-item"><span>thread</span><strong class="mono">thd_92ab18</strong></div>
+                <div class="debug-item"><span>sse</span><strong>streaming</strong></div>
+                <div class="debug-item"><span>cwd</span><strong class="mono">/workspace/codex-gateway</strong></div>
+              </div>
+            </details>
+          </footer>
+        </main>
+      </article>
+    </section>
+
+    <section class="section" id="sage-card-action">
+      <div class="section-head">
+        <div>
+          <div class="kicker">04 / grouped action panel</div>
+          <h2>Sage workbench card</h2>
+        </div>
+        <p>
+          Turns the top action area into a small command panel with one clear
+          button and compact operational metadata.
+        </p>
+      </div>
+      <article class="desk sage sage-card-action">
+        <aside class="desk-sidebar" aria-label="Conversation list">
+          <header class="desk-brand">
+            <div class="desk-mark">CG</div>
+            <div>
+              <strong>Codex Gateway</strong>
+              <span class="status" style="color: var(--desk-good)">ready</span>
+            </div>
+          </header>
+          <div class="sidebar-actions">
+            <button type="button">New chat</button>
+            <div class="action-panel">
+              <strong>Workspace ready</strong>
+              <span class="mono">gpt-5.4 / full access</span>
+            </div>
+          </div>
+          <nav class="conversation-list" aria-label="Recent conversations">
+            <section class="conversation-group">
+              <div class="conversation-group-title">Today</div>
+              <button class="conversation-item active" type="button">
+                <strong>Repository summary</strong>
+                <span>Rust gateway and built-in web UI</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Frontend redesign</strong>
+                <span>Sidebar chat surface</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>API smoke test</strong>
+                <span>Reply with exactly ready</span>
+              </button>
+            </section>
+            <section class="conversation-group">
+              <div class="conversation-group-title">Earlier</div>
+              <button class="conversation-item" type="button">
+                <strong>Deployment route</strong>
+                <span>POST /api/deployments</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Bridge protocol</strong>
+                <span>stdio app-server events</span>
+              </button>
+            </section>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="mono">5 conversations</span>
+            <strong>Diagnostics are folded.</strong>
+          </footer>
+        </aside>
+        <main class="desk-main">
+          <header class="chat-topbar">
+            <div class="chat-title">
+              <strong>Repository summary</strong>
+              <span class="mono">gpt-5.4</span>
+            </div>
+            <div class="top-actions">
+              <button type="button">Open thread</button>
+              <button class="primary" type="button">Send</button>
+            </div>
+          </header>
+          <section class="chat-stage">
+            <article class="message">
+              <small>user</small>
+              <div>Show all conversations, but keep runtime logs out of the way.</div>
+            </article>
+            <article class="message assistant">
+              <small>assistant</small>
+              <div>Conversation history belongs in the rail. Runtime logs belong behind diagnostics so the main task stays readable.</div>
+            </article>
+          </section>
+          <footer>
+            <form class="composer">
+              <div class="composer-box">Ask Codex about the current workspace...</div>
+              <div class="composer-meta">
+                <span class="mono">ready / idle</span>
+                <button class="primary" type="button">Send</button>
+              </div>
+            </form>
+            <details class="debug-closed">
+              <summary><span>Diagnostics</span><span class="mono">closed</span></summary>
+              <div class="debug-grid">
+                <div class="debug-item"><span>session</span><strong class="mono">7f41c9a2</strong></div>
+                <div class="debug-item"><span>thread</span><strong class="mono">thd_92ab18</strong></div>
+                <div class="debug-item"><span>sse</span><strong>streaming</strong></div>
+                <div class="debug-item"><span>cwd</span><strong class="mono">/workspace/codex-gateway</strong></div>
+              </div>
+            </details>
+          </footer>
+        </main>
+      </article>
+    </section>
+
+    <section class="section" id="sage-rule-action">
+      <div class="section-head">
+        <div>
+          <div class="kicker">05 / ruled command strip</div>
+          <h2>Sage workbench rule</h2>
+        </div>
+        <p>
+          A stricter command strip. It keeps the top of the sidebar deliberate
+          without adding another button.
+        </p>
+      </div>
+      <article class="desk sage sage-rule-action">
+        <aside class="desk-sidebar" aria-label="Conversation list">
+          <header class="desk-brand">
+            <div class="desk-mark">CG</div>
+            <div>
+              <strong>Codex Gateway</strong>
+              <span class="status" style="color: var(--desk-good)">ready</span>
+            </div>
+          </header>
+          <div class="sidebar-actions">
+            <button type="button">New chat</button>
+            <div class="action-row"><span class="mono">last sync</span><strong class="mono">12:42</strong></div>
+          </div>
+          <nav class="conversation-list" aria-label="Recent conversations">
+            <section class="conversation-group">
+              <div class="conversation-group-title">Today</div>
+              <button class="conversation-item active" type="button">
+                <strong>Repository summary</strong>
+                <span>Rust gateway and built-in web UI</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Frontend redesign</strong>
+                <span>Minimal chat desk variants</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Thread history</strong>
+                <span>List and resume conversations</span>
+              </button>
+            </section>
+            <section class="conversation-group">
+              <div class="conversation-group-title">Earlier</div>
+              <button class="conversation-item" type="button">
+                <strong>Deployment workflow</strong>
+                <span>Codex pushes GHCR image</span>
+              </button>
+              <button class="conversation-item" type="button">
+                <strong>Auth setup</strong>
+                <span>JWT secret and bearer token</span>
+              </button>
+            </section>
+          </nav>
+          <footer class="sidebar-footer">
+            <span class="mono">5 conversations</span>
+            <strong>Workspace inspector closed.</strong>
+          </footer>
+        </aside>
+        <main class="desk-main">
+          <header class="chat-topbar">
+            <div class="chat-title">
+              <strong>Repository summary</strong>
+              <span class="mono">gpt-5.4</span>
+            </div>
+            <div class="top-actions">
+              <button type="button">Open thread</button>
+              <button class="primary" type="button">Send</button>
+            </div>
+          </header>
+          <section class="chat-stage">
+            <article class="message">
+              <small>user</small>
+              <div>Keep the left sidebar, but make the interface feel like a real app.</div>
+            </article>
+            <article class="message assistant">
+              <small>assistant</small>
+              <div>The app shell can feel polished without exposing every bridge detail. Conversation history stays visible; diagnostics stay folded.</div>
+            </article>
+          </section>
+          <footer>
+            <form class="composer">
+              <div class="composer-box">Ask Codex to inspect the workspace...</div>
+              <div class="composer-meta">
+                <span class="mono">full access sandbox</span>
+                <button class="primary" type="button">Send</button>
+              </div>
+            </form>
+            <details class="debug-closed">
+              <summary><span>Diagnostics</span><span class="mono">hidden</span></summary>
+              <div class="debug-grid">
+                <div class="debug-item"><span>session</span><strong class="mono">7f41c9a2</strong></div>
+                <div class="debug-item"><span>thread</span><strong class="mono">thd_92ab18</strong></div>
+                <div class="debug-item"><span>sse</span><strong>streaming</strong></div>
+                <div class="debug-item"><span>cwd</span><strong class="mono">/workspace/codex-gateway</strong></div>
+              </div>
+            </details>
+          </footer>
+        </main>
+      </article>
+    </section>
+  </body>
+</html>
