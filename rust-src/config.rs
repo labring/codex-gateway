@@ -25,6 +25,7 @@ pub struct AppConfig {
     pub port: u16,
     pub bridge_cwd: PathBuf,
     pub public_dir: PathBuf,
+    pub lab_dir: PathBuf,
     pub codex_bin: String,
     pub debug: bool,
     pub default_model: Option<String>,
@@ -38,6 +39,7 @@ pub struct AppConfig {
 impl AppConfig {
     pub fn from_env(root_dir: PathBuf) -> Self {
         let public_dir = root_dir.join("public");
+        let lab_dir = root_dir.join("lab");
 
         Self {
             host: read_env(HOST_ENV).unwrap_or_else(|| "0.0.0.0".to_string()),
@@ -46,6 +48,7 @@ impl AppConfig {
                 .map(PathBuf::from)
                 .unwrap_or_else(|| root_dir.clone()),
             public_dir,
+            lab_dir,
             codex_bin: read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string()),
             debug: read_bool_flag(DEBUG_ENV),
             default_model: read_env(DEFAULT_MODEL_ENV),

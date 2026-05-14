@@ -31,6 +31,7 @@ use codex_gateway::{config::AppConfig, session_manager::SessionManager};
 struct AppState {
     session_manager: SessionManager,
     public_dir: PathBuf,
+    lab_dir: PathBuf,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -78,6 +79,7 @@ async fn main() -> Result<(), AppError> {
         port = config.port,
         bridge_cwd = %config.bridge_cwd.display(),
         public_dir = %config.public_dir.display(),
+        lab_dir = %config.lab_dir.display(),
         codex_bin = %config.codex_bin,
         auth_enabled = config.auth.is_some(),
         debug = config.debug,
@@ -92,6 +94,7 @@ async fn main() -> Result<(), AppError> {
     let state = AppState {
         session_manager: session_manager.clone(),
         public_dir: config.public_dir.clone(),
+        lab_dir: config.lab_dir.clone(),
     };
 
     let app = build_router(state);
@@ -121,6 +124,7 @@ fn build_router(state: AppState) -> Router {
         .route("/", get(index_html))
         .route("/app.js", get(app_js))
         .route("/styles.css", get(styles_css))
+        .route("/ui-style-gallery.html", get(ui_style_gallery_html))
         .route(
             "/api/state",
             get(legacy_single_session_gone).post(legacy_single_session_gone),
@@ -199,6 +203,16 @@ async fn styles_css(State(state): State<AppState>) -> Result<impl IntoResponse, 
     serve_static_file(
         state.public_dir.join("styles.css"),
         "text/css; charset=utf-8",
+    )
+    .await
+}
+
+async fn ui_style_gallery_html(
+    State(state): State<AppState>,
+) -> Result<impl IntoResponse, AppError> {
+    serve_static_file(
+        state.lab_dir.join("design/ui-style-gallery.html"),
+        "text/html; charset=utf-8",
     )
     .await
 }
