@@ -3,7 +3,7 @@ FROM rust:1-bookworm AS builder
 WORKDIR /build
 
 COPY Cargo.toml Cargo.lock ./
-COPY rust-src ./rust-src
+COPY src ./src
 
 RUN cargo build --release --bin codex-gateway --bin codex-gateway-cli
 

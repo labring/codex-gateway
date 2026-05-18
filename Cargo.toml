@@ -3,17 +3,6 @@ name = "codex-gateway"
 version = "0.6.0"
 edition = "2024"
 
-[lib]
-path = "rust-src/lib.rs"
-
-[[bin]]
-name = "codex-gateway"
-path = "rust-src/main.rs"
-
-[[bin]]
-name = "codex-gateway-cli"
-path = "rust-src/cli.rs"
-
 [dependencies]
 async-stream = "0.3"
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "query", "tokio"] }

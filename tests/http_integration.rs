@@ -46,7 +46,7 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
     assert_eq!(turn.get("ok").and_then(Value::as_bool), Some(true));
 
     let state = gateway.wait_for_json(&format!("/api/sessions/{session_id}/state"), |payload| {
-        payload
+        let has_assistant_reply = payload
             .pointer("/state/transcript")
             .and_then(Value::as_array)
             .is_some_and(|entries| {
@@ -54,7 +54,13 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
                     entry.get("role").and_then(Value::as_str) == Some("assistant")
                         && entry.get("text").and_then(Value::as_str) == Some("fake assistant reply")
                 })
-            })
+            });
+
+        has_assistant_reply
+            && payload
+                .pointer("/state/lastTurnStatus")
+                .and_then(Value::as_str)
+                == Some("completed")
     });
     assert_eq!(
         state
