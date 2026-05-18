@@ -166,11 +166,23 @@ Gateway-owned settings use the `CODEX_GATEWAY_` prefix for better discoverabilit
 - `CODEX_GATEWAY_OPENAI_API_KEY`: API key used at startup to run `codex login --with-api-key`.
 - `CODEX_GATEWAY_OPENAI_BASE_URL`: upstream OpenAI-compatible base URL. When set, the gateway configures Codex to use a custom provider with `supports_websockets = false`.
 - `CODEX_GATEWAY_MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
+- `CODEX_GATEWAY_MAX_DEPLOYMENTS`: maximum active deployment tasks. Defaults to `4`.
 - `CODEX_GATEWAY_SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
+- `CODEX_GATEWAY_DEPLOYMENT_TIMEOUT_MS`: deployment task timeout and deployment session keepalive window. Defaults to `3600000`.
 - `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
 - `CODEX_GATEWAY_CODEX_HOME`: Codex runtime home for auth cache, logs, history, and config. In Docker this defaults to `/codex-home`.
 - `CODEX_GATEWAY_DEBUG`: enables raw bridge message debugging when set to `1`.
 - `CODEX_GATEWAY_JWT_SECRET`: optional HS256 JWT secret. When set, the gateway requires a valid bearer token for all routes except `/healthz` and `/readyz`.
+- `CODEX_GATEWAY_SESSION_RUNTIME`: session runtime backend. Defaults to `local`; set to `devbox` to create a Devbox runtime before each session.
+- `CODEX_GATEWAY_DEVBOX_BASE_URL`: Devbox API base URL. If omitted in devbox mode, the gateway derives `https://devbox-server.${SEALOS_HOST}` from `SEALOS_HOST`.
+- `CODEX_GATEWAY_DEVBOX_TOKEN`: Devbox API bearer token. `DEVBOX_TOKEN` is also accepted.
+- `CODEX_GATEWAY_DEVBOX_JWT_SIGNING_KEY`: HS256 signing key used when no Devbox token is configured. `DEVBOX_JWT_SIGNING_KEY` is also accepted.
+- `CODEX_GATEWAY_DEVBOX_NAMESPACE`: Devbox namespace. Defaults to `ns-test`.
+- `CODEX_GATEWAY_DEVBOX_RUNTIME_IMAGE`: optional Devbox runtime image override.
+- `CODEX_GATEWAY_DEVBOX_ARCHIVE_AFTER_PAUSE_TIME`: Devbox archive delay after pause. Defaults to `24h`.
+- `CODEX_GATEWAY_DEVBOX_WAIT_TIMEOUT_SECONDS`: timeout while waiting for a new Devbox to become `Running`. Defaults to `60`.
+- `CODEX_GATEWAY_DEVBOX_GATEWAY_READY_TIMEOUT_SECONDS`: timeout while waiting for the Codex Gateway inside Devbox to pass health and readiness checks. Defaults to `60`.
+- `CODEX_GATEWAY_DEVBOX_BOOTSTRAP_TIMEOUT_SECONDS`: timeout for the bootstrap command. Defaults to `300`.
 
 ## Docker
 
