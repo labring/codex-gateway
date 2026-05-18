@@ -543,7 +543,10 @@ fn create_runtime_env(ttl: Duration) -> serde_json::Value {
     let mut env = serde_json::Map::new();
     env.insert("CODEX_GATEWAY_HOST".to_string(), json!("0.0.0.0"));
     env.insert("CODEX_GATEWAY_PORT".to_string(), json!("1317"));
-    env.insert("CODEX_GATEWAY_SESSION_RUNTIME".to_string(), json!("local"));
+    env.insert(
+        "CODEX_GATEWAY_SESSION_RUNTIME".to_string(),
+        json!("embedded"),
+    );
     env.insert(
         "CODEX_GATEWAY_SESSION_TTL_MS".to_string(),
         json!(ttl.as_millis().to_string()),

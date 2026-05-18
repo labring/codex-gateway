@@ -1,98 +1,61 @@
 # Codex Gateway
 
-English version: [README.md](./README.md)
+英文版：[README.md](./README.md)
 
-这个仓库当前的定位，是一个最小化的多 session `Codex gateway`，用于验证 `codex app-server` 能不能通过 Rust HTTP/SSE 服务对外暴露。
+Codex Gateway 是一个 Rust HTTP/SSE 网关，用来通过小型 API 和浏览器 UI 运行相互隔离的 Codex session。
 
-架构说明： [docs/architecture.md](./docs/architecture.md)
+`.qoder/` 下可能存在 Qoder 自动生成文档；它是生成物，不作为人工源码文档编辑或提交。这个 README 是当前仓库维护的人工入口。
 
-API 文档： [docs/api.md](./docs/api.md)
+## Runtime 形态
 
-## 当前形态
+默认 runtime 是 `embedded`：
 
-整体链路是：
+1. 客户端通过 Rust gateway 创建 session。
+2. session 拥有一个 `CodexAppServerBridge`。
+3. bridge 通过 stdio 启动并管理一个 `codex app-server` 子进程。
+4. app-server 的通知会写入 session state，并通过 SSE 推给客户端。
 
-1. 外部客户端调用 Rust HTTP API
-2. Rust 服务为每个 session 创建一个 Codex bridge
-3. 每个 bridge 启动一个自己的本地 `codex app-server` 子进程
-4. `codex app-server` 的通知通过 SSE 回推给对应 session 的客户端
+可选的 `devbox` runtime 是远端执行后端：
 
-官方参考：
+1. 外层 gateway 创建 Devbox runtime。
+2. 外层 gateway 等待 Devbox 内部的 gateway ready。
+3. 外层 gateway 在内部 gateway 里创建远端 session。
+4. 内部 gateway 使用 `embedded` runtime 运行 `codex app-server`。
 
-- [Codex App Server](https://developers.openai.com/codex/app-server/)
-- [Codex CLI Quickstart](https://developers.openai.com/codex/quickstart/#setup)
-- [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
-- [Codex CI/CD auth](https://developers.openai.com/codex/auth/ci-cd-auth)
+`devbox` 是 runtime 基础设施，不是产品模式。
 
-## 目录说明
+## Brain Deployment API
 
-- `rust-src/main.rs`：Rust HTTP 服务本体，提供 session API、SSE、健康检查和静态文件
-- `rust-src/bridge.rs`：协议桥接层，负责 `initialize`、`account/read`、`model/list`、`thread/start`、`turn/start` 和通知处理
-- `rust-src/runtime.rs`：运行时辅助模块，负责 API key 登录和 `openai_base_url` 覆盖
-- `rust-src/session_manager.rs`：多 session 生命周期管理，包含 TTL 回收
-- `rust-src/cli.rs`：单次 CLI 冒烟验证
-- `public/index.html`：最小化 Web UI
-- `public/app.js`：浏览器端逻辑，会自动创建自己的 session 并订阅自己的 SSE
-- `public/styles.css`：样式
-- `Dockerfile`：多阶段容器镜像，负责构建 Rust 二进制并安装 Codex CLI
+`POST /api/deployments` 是为 Brain 应用预留的接口，不是通用部署产品接口。
 
-## 运行模型
-
-现在已经不是单个全局共享会话了。
-
-- `POST /api/sessions` 会创建一个新 session
-- 每个 session 拥有一个自己的 `CodexAppServerBridge`
-- 每个 bridge 拥有一个自己的 `codex app-server` 子进程
-- `/state`、`/events`、`/turn`、`/thread/new` 都是 session 级接口
-- session 会在空闲超时后自动清理，也可以手动 `DELETE /api/sessions/:id`
-
-这意味着多个调用方不会再共用同一个 thread 或 transcript。
+这个接口会创建一个 Codex task，用来部署仓库并返回机器可读的部署结果。当当前 session runtime 由 Devbox 承载时，Gateway 会先 bootstrap Devbox runtime，再启动 Brain deployment task。
 
 ## HTTP API
 
-### 健康检查
-
 - `GET /healthz`
 - `GET /readyz`
-
-### Session 接口
-
 - `POST /api/sessions`
-  - 请求体：`{ "model": "可选模型 ID" }`
-  - 返回：`{ ok, sessionId, session, state }`
 - `GET /api/sessions/:id/state`
-  - 返回 session 信息和当前 bridge 状态快照
 - `GET /api/sessions/:id/events`
-  - 只属于该 session 的 SSE 流
 - `POST /api/sessions/:id/turn`
-  - 请求体：`{ "prompt": "..." }`
 - `POST /api/sessions/:id/turn/interrupt`
-  - 请求停止当前正在运行的 turn，同时保留 session
 - `POST /api/sessions/:id/thread/new`
-  - 请求体：`{ "model": "可选模型 ID" }`
+- `POST /api/sessions/:id/thread/resume`
 - `DELETE /api/sessions/:id`
-  - 关闭该 session 及其子进程
+- `GET /api/threads`
+- `GET /api/threads/:threadId`
+- `POST /api/deployments`
+- `GET /api/deployments/:threadId`
 
-### 当前 PoC 行为
-
-- `codex app-server` 会以 `sandbox_mode="danger-full-access"` 和 `approval_policy="never"` 启动
-- 如果旧版或新版 approval request 仍然出现，Gateway 会自动接受
-- dynamic tool call 会收到结构化 tool result；不支持的 tool 会显式失败，而不是把 turn 卡住
-- 仍然依赖交互式 UI 的 server 发起请求会被显式拒绝或取消
-- session 状态只存在内存里，不持久化
-- gateway 鉴权是可选的，只有设置 `CODEX_GATEWAY_JWT_SECRET` 时才会开启
-- 单个 session 同一时间只能有一个 active turn
-- 正在运行的 turn 可以被 interrupt，不需要删除整个 session
+旧的单 session 路由已经移除，例如 `/api/state`、`/api/events`、`/api/turn`、`/api/thread/new`，现在会返回 `410 Gone`。
 
 ## 本地运行
 
-### Web UI
-
-启动服务：
+启动 gateway：
 
 ```bash
 CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
-CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
+CODEX_GATEWAY_OPENAI_BASE_URL=https://example-openai-compatible-endpoint.test \
 CODEX_GATEWAY_JWT_SECRET=replace-with-your-hs256-secret \
 cargo run --bin codex-gateway
 ```
@@ -103,35 +66,7 @@ cargo run --bin codex-gateway
 http://127.0.0.1:1317
 ```
 
-页面会优先恢复上一次仍然存活的 session，失败时尝试恢复上一次的 thread，并自动连接它自己的 SSE 流。开启 JWT 鉴权后，需要先在侧边栏的 `Auth` 输入框里填入 Bearer token。
-
-### CLI 冒烟
-
-```bash
-cargo run --bin codex-gateway-cli --
-```
-
-或自定义 prompt：
-
-```bash
-cargo run --bin codex-gateway-cli -- "Reply with exactly the single word ready."
-```
-
-## 手动验证
-
-如果你要快速验证这个项目能不能跑，建议按这个顺序：
-
-1. 执行 `cargo run --bin codex-gateway`
-2. 访问 `http://127.0.0.1:1317/healthz`
-3. 访问 `http://127.0.0.1:1317/readyz`
-4. 打开 `http://127.0.0.1:1317`
-5. 等页面里的 `Status` 变成 `ready`
-6. 发送 `Reply with exactly the single word ready. Do not call tools.`
-7. 确认 Transcript 里出现 `ready`
-
-如果你想直接验证 API，而不是页面：
-
-创建 session：
+快速 API 验证：
 
 ```bash
 curl -X POST http://127.0.0.1:1317/api/sessions \
@@ -139,109 +74,40 @@ curl -X POST http://127.0.0.1:1317/api/sessions \
   -d '{}'
 ```
 
-发送 turn：
+## 配置
 
-```bash
-curl -X POST http://127.0.0.1:1317/api/sessions/<SESSION_ID>/turn \
-  -H 'Content-Type: application/json' \
-  -d '{"prompt":"Reply with exactly the single word ready. Do not call tools."}'
-```
+Gateway 自有配置统一使用 `CODEX_GATEWAY_` 前缀。
 
-查看状态：
-
-```bash
-curl http://127.0.0.1:1317/api/sessions/<SESSION_ID>/state
-```
-
-如果 transcript 里出现 `ready`，就说明 gateway、bridge 和 `codex app-server` 之间的链路已经跑通。
-
-## 环境变量
-
-gateway 自有配置统一使用 `CODEX_GATEWAY_` 前缀，便于和 Codex CLI 原生变量区分。
-
-- `CODEX_GATEWAY_HOST`：Rust 服务监听地址，默认 `0.0.0.0`
+- `CODEX_GATEWAY_HOST`：监听地址，默认 `0.0.0.0`
 - `CODEX_GATEWAY_PORT`：监听端口，默认 `1317`
-- `CODEX_GATEWAY_CWD`：传给 `thread/start` 的工作目录，默认仓库根目录
-- `CODEX_GATEWAY_CODEX_BIN`：`codex` 可执行文件路径，默认从 `PATH` 查找
-- `CODEX_GATEWAY_MODEL`：新 bridge 默认模型
+- `CODEX_GATEWAY_CWD`：传给 `thread/start` 的工作目录
+- `CODEX_GATEWAY_CODEX_BIN`：`codex` 可执行文件路径
+- `CODEX_GATEWAY_MODEL`：默认模型
 - `CODEX_GATEWAY_OPENAI_API_KEY`：启动时用于执行 `codex login --with-api-key` 的 API key
-- `CODEX_GATEWAY_OPENAI_BASE_URL`：推荐使用的上游 OpenAI-compatible `base_url`。设置后，gateway 会把它配置成一个关闭 websocket 的自定义 Codex provider
-- `CODEX_GATEWAY_MAX_SESSIONS`：最大同时在线 session 数，默认 `12`
+- `CODEX_GATEWAY_OPENAI_BASE_URL`：上游 OpenAI-compatible base URL
+- `CODEX_GATEWAY_JWT_SECRET`：可选 HS256 JWT secret
+- `CODEX_GATEWAY_MAX_SESSIONS`：最大在线 session 数，默认 `12`
 - `CODEX_GATEWAY_SESSION_TTL_MS`：空闲 session TTL，默认 `1800000`
 - `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`：清理扫描间隔，默认 `60000`
-- `CODEX_GATEWAY_CODEX_HOME`：Codex 运行目录，包含认证缓存、日志、历史和配置；Docker 默认值是 `/codex-home`
-- `CODEX_GATEWAY_DEBUG`：设为 `1` 时输出原始 bridge 消息，便于调试
-- `CODEX_GATEWAY_JWT_SECRET`：可选的 HS256 JWT secret。设置后，除了 `/healthz` 和 `/readyz` 外，其他路由都需要合法的 Bearer token
+- `CODEX_GATEWAY_SESSION_RUNTIME`：session runtime backend，默认 `embedded`；支持值只有 `embedded` 和 `devbox`
+- `CODEX_GATEWAY_MAX_DEPLOYMENTS`：最大并发 Brain deployment task 数，默认 `4`
+- `CODEX_GATEWAY_DEPLOYMENT_TIMEOUT_MS`：Brain deployment 超时和 session keepalive 窗口，默认 `3600000`
 
-## Docker
+Devbox 相关配置只在 runtime 为 `devbox` 时使用：
 
-容器镜像会先构建 Rust gateway 二进制，再通过 `npm install -g @openai/codex` 在 Linux 中安装 Codex CLI，这和官方 Quickstart 一致。
+- `CODEX_GATEWAY_DEVBOX_BASE_URL`
+- `CODEX_GATEWAY_DEVBOX_TOKEN`
+- `CODEX_GATEWAY_DEVBOX_JWT_SIGNING_KEY`
+- `CODEX_GATEWAY_DEVBOX_NAMESPACE`
+- `CODEX_GATEWAY_DEVBOX_RUNTIME_IMAGE`
+- `CODEX_GATEWAY_DEVBOX_ARCHIVE_AFTER_PAUSE_TIME`
+- `CODEX_GATEWAY_DEVBOX_WAIT_TIMEOUT_SECONDS`
+- `CODEX_GATEWAY_DEVBOX_GATEWAY_READY_TIMEOUT_SECONDS`
+- `CODEX_GATEWAY_DEVBOX_BOOTSTRAP_TIMEOUT_SECONDS`
 
-构建镜像：
-
-```bash
-docker build -t codex-gateway .
-```
-
-运行容器：
-
-```bash
-docker run --rm \
-  -p 1317:1317 \
-  -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
-  -e CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
-  -e CODEX_GATEWAY_JWT_SECRET=replace-with-your-hs256-secret \
-  -e CODEX_GATEWAY_HOST=0.0.0.0 \
-  -e CODEX_GATEWAY_PORT=1317 \
-  -e CODEX_GATEWAY_MAX_SESSIONS=8 \
-  codex-gateway
-```
-
-说明：
-
-- 如果设置了 `CODEX_GATEWAY_OPENAI_API_KEY`，容器会在启动 gateway 前自动执行 `codex login --with-api-key`
-- `CODEX_GATEWAY_OPENAI_BASE_URL` 是把 Codex 指向第三方 OpenAI-compatible endpoint 的推荐方式；gateway 会把它映射成自定义 provider，而不是内建 `openai` provider
-- 如果设置了 `CODEX_GATEWAY_JWT_SECRET`，普通 HTTP 请求需要带 `Authorization: Bearer <jwt>`；内置 Web UI 也支持在侧边栏直接填写 token
-- 普通 API key 启动不需要挂载 `CODEX_GATEWAY_CODEX_HOME`；只有在你希望容器重启后保留 Codex 状态时才需要挂载
-- 如果要让 Codex 在容器里操作别的工作目录，需要同时设置 `CODEX_GATEWAY_CWD` 并挂载对应路径
-- 这是 PoC 部署方式，不是生产加固版本
-- 容器启动后，验证方法和本地运行时完全一样
-
-## GitHub Container Registry
-
-GitHub Actions 可以在推送到 `main` 以及版本 tag（例如 `v0.6.0`）后，把镜像发布到 GHCR。
-
-发布出来的 tag 规则：
-
-- `ghcr.io/labring/codex-gateway:main` 表示当前 `main` 分支最新镜像
-- `ghcr.io/labring/codex-gateway:sha-<commit>` 表示每次发布对应的提交镜像
-- 推送版本 tag 时，会额外发布 `v0.6.0`、`0.6.0`、`0.6`、`0` 和 `latest`
-
-拉取当前 `main` 镜像：
+## 验证
 
 ```bash
-docker pull ghcr.io/labring/codex-gateway:main
+cargo fmt --check
+cargo test
 ```
-
-运行方式和本地构建镜像一致：
-
-```bash
-docker run --rm \
-  -p 1317:1317 \
-  -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
-  -e CODEX_GATEWAY_OPENAI_BASE_URL=https://sub2api-xnldrpuk.usw-1.sealos.app \
-  -e CODEX_GATEWAY_HOST=0.0.0.0 \
-  -e CODEX_GATEWAY_PORT=1317 \
-  -e CODEX_GATEWAY_MAX_SESSIONS=8 \
-  ghcr.io/labring/codex-gateway:main
-```
-
-如果包可见性是私有的，拉取前需要先登录 GHCR。
-
-## 当前限制
-
-- 没有内建限流
-- 没有持久化 session
-- 没有审批 UI，因为当前 Gateway 默认使用最高权限
-- 每个活跃 session 都会占用一个 `codex app-server` 子进程
-- 浏览器可以通过保存 `sessionId` 和 `threadId` 做刷新恢复，但 gateway session 本身仍然只存在内存里

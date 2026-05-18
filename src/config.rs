@@ -11,6 +11,7 @@ use crate::env_config::{
     SESSION_SWEEP_INTERVAL_MS_ENV, SESSION_TTL_MS_ENV, read_bool_flag, read_env, read_u16,
     read_u64, read_usize,
 };
+use crate::error::AppError;
 
 #[derive(Debug, Clone)]
 pub struct ClientInfo {
@@ -26,7 +27,7 @@ pub struct AuthConfig {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SessionRuntimeMode {
-    Local,
+    Embedded,
     Devbox,
 }
 
@@ -50,7 +51,6 @@ pub struct AppConfig {
     pub port: u16,
     pub bridge_cwd: PathBuf,
     pub public_dir: PathBuf,
-    pub lab_dir: PathBuf,
     pub codex_bin: String,
     pub debug: bool,
     pub default_model: Option<String>,
@@ -66,20 +66,18 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    pub fn from_env(root_dir: PathBuf) -> Self {
+    pub fn from_env(root_dir: PathBuf) -> Result<Self, AppError> {
         let public_dir = root_dir.join("public");
-        let lab_dir = root_dir.join("lab");
-        let session_runtime = read_session_runtime();
+        let session_runtime = read_session_runtime()?;
         let devbox = read_devbox_config(session_runtime);
 
-        Self {
+        Ok(Self {
             host: read_env(HOST_ENV).unwrap_or_else(|| "0.0.0.0".to_string()),
             port: read_u16(PORT_ENV).unwrap_or(1317),
             bridge_cwd: read_env(BRIDGE_CWD_ENV)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| root_dir.clone()),
             public_dir,
-            lab_dir,
             codex_bin: read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string()),
             debug: read_bool_flag(DEBUG_ENV),
             default_model: read_env(DEFAULT_MODEL_ENV),
@@ -102,18 +100,26 @@ impl AppConfig {
             auth: read_env(JWT_SECRET_ENV).map(|jwt_secret| AuthConfig { jwt_secret }),
             session_runtime,
             devbox,
-        }
+        })
     }
 }
 
-fn read_session_runtime() -> SessionRuntimeMode {
-    match read_env(SESSION_RUNTIME_ENV)
-        .unwrap_or_else(|| "local".to_string())
+fn read_session_runtime() -> Result<SessionRuntimeMode, AppError> {
+    parse_session_runtime(read_env(SESSION_RUNTIME_ENV).as_deref()).map_err(AppError::bad_request)
+}
+
+fn parse_session_runtime(value: Option<&str>) -> Result<SessionRuntimeMode, String> {
+    match value
+        .unwrap_or("embedded")
+        .trim()
         .to_ascii_lowercase()
         .as_str()
     {
-        "devbox" => SessionRuntimeMode::Devbox,
-        _ => SessionRuntimeMode::Local,
+        "embedded" => Ok(SessionRuntimeMode::Embedded),
+        "devbox" => Ok(SessionRuntimeMode::Devbox),
+        other => Err(format!(
+            "Unsupported CODEX_GATEWAY_SESSION_RUNTIME value `{other}`. Supported values: embedded, devbox"
+        )),
     }
 }
 
@@ -151,4 +157,38 @@ fn read_devbox_config(session_runtime: SessionRuntimeMode) -> Option<DevboxConfi
             read_u64(DEVBOX_BOOTSTRAP_TIMEOUT_SECONDS_ENV).unwrap_or(300),
         ),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn session_runtime_defaults_to_embedded() {
+        assert_eq!(
+            parse_session_runtime(None).expect("runtime parses"),
+            SessionRuntimeMode::Embedded
+        );
+    }
+
+    #[test]
+    fn session_runtime_accepts_embedded_and_devbox() {
+        assert_eq!(
+            parse_session_runtime(Some("embedded")).expect("runtime parses"),
+            SessionRuntimeMode::Embedded
+        );
+        assert_eq!(
+            parse_session_runtime(Some("devbox")).expect("runtime parses"),
+            SessionRuntimeMode::Devbox
+        );
+    }
+
+    #[test]
+    fn session_runtime_rejects_local() {
+        let error = parse_session_runtime(Some("local")).expect_err("local is not supported");
+
+        assert!(error.contains("embedded"));
+        assert!(error.contains("devbox"));
+        assert!(error.contains("local"));
+    }
 }

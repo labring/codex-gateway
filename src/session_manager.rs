@@ -38,7 +38,7 @@ struct Session {
 }
 
 enum SessionBackend {
-    Local { bridge: CodexAppServerBridge },
+    Embedded { bridge: CodexAppServerBridge },
     RemoteDevbox(Box<RemoteDevboxBackend>),
 }
 
@@ -218,7 +218,7 @@ impl SessionManager {
         let session = self.require_session(session_id)?;
         info!(session_id = %session_id, "subscribing to session events");
         let receiver = match &session.backend {
-            SessionBackend::Local { bridge } => bridge.subscribe(),
+            SessionBackend::Embedded { bridge } => bridge.subscribe(),
             SessionBackend::RemoteDevbox(_) => {
                 return Err(AppError::internal(
                     "Remote Devbox session events are not proxied yet",
@@ -317,11 +317,11 @@ impl SessionManager {
                 .await;
         }
 
-        self.create_local_backend(model, resume_thread_id, metadata)
+        self.create_embedded_backend(model, resume_thread_id, metadata)
             .await
     }
 
-    async fn create_local_backend(
+    async fn create_embedded_backend(
         &self,
         model: Option<String>,
         resume_thread_id: Option<String>,
@@ -347,7 +347,7 @@ impl SessionManager {
             return Err(error);
         }
 
-        Ok(SessionBackend::Local { bridge })
+        Ok(SessionBackend::Embedded { bridge })
     }
 
     async fn create_remote_devbox_backend(
@@ -508,7 +508,7 @@ impl Session {
 
     fn state(&self) -> BridgeStateSnapshot {
         match &self.backend {
-            SessionBackend::Local { bridge } => bridge.get_state(),
+            SessionBackend::Embedded { bridge } => bridge.get_state(),
             SessionBackend::RemoteDevbox(backend) => backend.state.read().unwrap().clone(),
         }
     }
@@ -519,7 +519,7 @@ impl Session {
 
     fn refresh_devbox_lease(&self, ttl: Duration) -> Result<(), AppError> {
         match &self.backend {
-            SessionBackend::Local { .. } => Ok(()),
+            SessionBackend::Embedded { .. } => Ok(()),
             SessionBackend::RemoteDevbox(backend) => {
                 let runtime = backend.runtime.clone();
                 tokio::spawn(async move {
@@ -534,7 +534,7 @@ impl Session {
 
     async fn list_threads(&self, params: Value) -> Result<Value, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => bridge.list_threads(params).await,
+            SessionBackend::Embedded { bridge } => bridge.list_threads(params).await,
             SessionBackend::RemoteDevbox(backend) => {
                 Ok(backend.gateway.list_threads(params).await?)
             }
@@ -543,7 +543,7 @@ impl Session {
 
     async fn read_thread(&self, thread_id: &str) -> Result<Value, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => bridge.read_thread(thread_id).await,
+            SessionBackend::Embedded { bridge } => bridge.read_thread(thread_id).await,
             SessionBackend::RemoteDevbox(backend) => {
                 Ok(backend.gateway.read_thread(thread_id).await?)
             }
@@ -552,7 +552,7 @@ impl Session {
 
     async fn send_prompt(&self, prompt: &str) -> Result<BridgeStateSnapshot, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => {
+            SessionBackend::Embedded { bridge } => {
                 bridge.send_prompt(prompt).await?;
                 Ok(bridge.get_state())
             }
@@ -569,7 +569,7 @@ impl Session {
 
     async fn interrupt_turn(&self) -> Result<BridgeStateSnapshot, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => {
+            SessionBackend::Embedded { bridge } => {
                 bridge.interrupt_turn().await?;
                 Ok(bridge.get_state())
             }
@@ -589,7 +589,7 @@ impl Session {
         model: Option<String>,
     ) -> Result<BridgeStateSnapshot, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => {
+            SessionBackend::Embedded { bridge } => {
                 bridge.start_new_thread(model).await?;
                 Ok(bridge.get_state())
             }
@@ -606,7 +606,7 @@ impl Session {
 
     async fn resume_thread(&self, thread_id: &str) -> Result<BridgeStateSnapshot, AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => {
+            SessionBackend::Embedded { bridge } => {
                 bridge.resume_thread(thread_id).await?;
                 Ok(bridge.get_state())
             }
@@ -623,7 +623,7 @@ impl Session {
 
     async fn close(&self, reason: &str) -> Result<(), AppError> {
         match &self.backend {
-            SessionBackend::Local { bridge } => {
+            SessionBackend::Embedded { bridge } => {
                 bridge.broadcast_session_closed(&self.id, reason);
                 bridge.stop().await
             }
