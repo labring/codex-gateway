@@ -77,6 +77,71 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
         Some("thread-resume")
     );
 
+    let (status, bad_deployment) = gateway.json_request(
+        "POST",
+        "/api/deployments",
+        Some(r#"{"githubToken":"ghp_fake","repository":"missing-owner"}"#),
+    );
+    assert_eq!(status, 400);
+    assert!(
+        bad_deployment
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("owner/repo"))
+    );
+
+    let (status, bad_branch) = gateway.json_request(
+        "POST",
+        "/api/deployments",
+        Some(r#"{"githubToken":"ghp_fake","repository":"owner/repo","branch":"main`bad"}"#),
+    );
+    assert_eq!(status, 400);
+    assert!(
+        bad_branch
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("branch"))
+    );
+
+    let (status, missing_deployment) =
+        gateway.json_request("GET", "/api/deployments/thread-resume", None);
+    assert_eq!(status, 404);
+    assert!(
+        missing_deployment
+            .get("error")
+            .and_then(Value::as_str)
+            .is_some_and(|message| message.contains("Unknown deployment thread"))
+    );
+
+    let (status, deployment) = gateway.json_request(
+        "POST",
+        "/api/deployments",
+        Some(r#"{"githubToken":"ghp_fake","repository":"owner/repo","branch":"main"}"#),
+    );
+    assert_eq!(status, 202);
+    assert_eq!(
+        deployment.get("status").and_then(Value::as_str),
+        Some("running")
+    );
+    let thread_id = deployment
+        .get("threadId")
+        .and_then(Value::as_str)
+        .expect("deployment thread id")
+        .to_string();
+
+    let deployment_status = gateway
+        .wait_for_json(&format!("/api/deployments/{thread_id}"), |payload| {
+            payload.get("status").and_then(Value::as_str) == Some("succeeded")
+        });
+    assert_eq!(
+        deployment_status.get("threadId").and_then(Value::as_str),
+        Some(thread_id.as_str())
+    );
+    assert_eq!(
+        deployment_status.get("image").and_then(Value::as_str),
+        Some("ghcr.io/owner/repo:sha-abcdef0")
+    );
+
     let (status, resumed) = gateway.json_request(
         "POST",
         &format!("/api/sessions/{session_id}/thread/resume"),

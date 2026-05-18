@@ -63,10 +63,15 @@ fn main() {
             send(&mut stdout, r#"{"method":"item/completed","params":{"item":{"id":"assistant-1","type":"agentMessage","status":"completed","text":"fake assistant reply"}}}"#);
             send(&mut stdout, r#"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#);
         } else if line.contains("\"method\":\"thread/read\"") {
+            let thread = if line.contains("\"threadId\":\"thread-1\"") {
+                deployment_thread_json()
+            } else {
+                resumed_thread_json()
+            };
             send(&mut stdout, &format!(
                 r#"{{"id":{},"result":{{"thread":{}}}}}"#,
                 id,
-                resumed_thread_json()
+                thread
             ));
         } else if line.contains("\"method\":\"thread/resume\"") {
             send(&mut stdout, &format!(
@@ -100,6 +105,10 @@ fn request_id(line: &str) -> Option<u64> {
 
 fn resumed_thread_json() -> &'static str {
     r#"{"id":"thread-resume","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"resume-user","type":"userMessage","content":[{"type":"text","text":"resumed user"}]},{"id":"resume-assistant","type":"agentMessage","text":"resumed assistant"}]}]}"#
+}
+
+fn deployment_thread_json() -> &'static str {
+    r#"{"id":"thread-1","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"deploy-user","type":"userMessage","content":[{"type":"text","text":"deploy user marker DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"message\":\"wrong\",\"error\":null}"}]},{"id":"deploy-assistant","type":"agentMessage","text":"Deployment image pushed to GHCR\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"}]}]}"#
 }
 
 fn send(stdout: &mut io::Stdout, message: &str) {

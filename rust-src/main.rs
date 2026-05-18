@@ -22,6 +22,9 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use codex_gateway::auth::{AuthState, auth_middleware};
+use codex_gateway::deployments::{
+    DeploymentRegistry, build_deployment_prompt, deployment_status_from_thread,
+};
 use codex_gateway::error::AppError;
 use codex_gateway::models::BridgeEvent;
 use codex_gateway::runtime::maybe_login_with_api_key;
@@ -30,6 +33,7 @@ use codex_gateway::{config::AppConfig, session_manager::SessionManager};
 #[derive(Clone)]
 struct AppState {
     session_manager: SessionManager,
+    deployment_registry: DeploymentRegistry,
     public_dir: PathBuf,
     lab_dir: PathBuf,
 }
@@ -68,6 +72,14 @@ struct ThreadListQuery {
     search_term: Option<String>,
 }
 
+#[derive(Debug, Default, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CreateDeploymentRequest {
+    github_token: Option<String>,
+    repository: Option<String>,
+    branch: Option<String>,
+}
+
 #[tokio::main]
 async fn main() -> Result<(), AppError> {
     init_tracing();
@@ -84,15 +96,20 @@ async fn main() -> Result<(), AppError> {
         auth_enabled = config.auth.is_some(),
         debug = config.debug,
         max_sessions = config.max_sessions,
+        max_deployments = config.max_deployments,
         session_ttl_ms = config.session_ttl.as_millis() as u64,
+        deployment_timeout_ms = config.deployment_timeout.as_millis() as u64,
         session_sweep_interval_ms = config.session_sweep_interval.as_millis() as u64,
         "gateway configuration loaded"
     );
     maybe_login_with_api_key(&config.codex_bin)?;
 
     let session_manager = SessionManager::new(config.clone());
+    let deployment_registry =
+        DeploymentRegistry::new(config.max_deployments, config.deployment_timeout);
     let state = AppState {
         session_manager: session_manager.clone(),
+        deployment_registry,
         public_dir: config.public_dir.clone(),
         lab_dir: config.lab_dir.clone(),
     };
@@ -142,6 +159,8 @@ fn build_router(state: AppState) -> Router {
             get(legacy_single_session_gone).post(legacy_single_session_gone),
         )
         .route("/api/sessions", post(create_session))
+        .route("/api/deployments", post(create_deployment))
+        .route("/api/deployments/{thread_id}", get(get_deployment))
         .route("/api/threads", get(get_threads))
         .route("/api/threads/{thread_id}", get(get_thread))
         .route("/api/sessions/{id}/state", get(get_session_state))
@@ -255,6 +274,235 @@ async fn create_session(
         "session": session,
         "state": snapshot,
     })))
+}
+
+async fn create_deployment(
+    State(state): State<AppState>,
+    body: Bytes,
+) -> Result<impl IntoResponse, AppError> {
+    let request: CreateDeploymentRequest = parse_json_body(body)?;
+    let github_token = trim_optional(request.github_token)
+        .ok_or_else(|| AppError::bad_request("githubToken must not be empty"))?;
+    let repository = trim_optional(request.repository)
+        .ok_or_else(|| AppError::bad_request("repository must not be empty"))?;
+    validate_repository(&repository)?;
+    let branch = trim_optional(request.branch);
+    validate_branch(branch.as_deref())?;
+
+    let create_guard = state.deployment_registry.try_begin_create()?;
+    info!("creating deployment task");
+
+    let (session_id, _session, snapshot) = state.session_manager.create_session(None, None).await?;
+    state
+        .session_manager
+        .touch_session_for(&session_id, state.deployment_registry.timeout())?;
+    let Some(thread_id) = snapshot.thread_id.clone() else {
+        if let Err(error) = state
+            .session_manager
+            .close_session(&session_id, "deployment-thread-missing")
+            .await
+        {
+            error!(
+                session_id = %session_id,
+                error = %error,
+                "failed to close session after deployment thread creation failed"
+            );
+        }
+        return Err(AppError::internal(
+            "Deployment thread was not created by app-server",
+        ));
+    };
+
+    let skill_preinstalled = state
+        .session_manager
+        .is_devbox_runtime_session(&session_id)?;
+    let prompt = build_deployment_prompt(
+        &repository,
+        branch.as_deref(),
+        &github_token,
+        skill_preinstalled,
+    );
+    if let Err(error) = state
+        .session_manager
+        .send_prompt(&session_id, &prompt)
+        .await
+    {
+        if let Err(close_error) = state
+            .session_manager
+            .close_session(&session_id, "deployment-start-failed")
+            .await
+        {
+            error!(
+                session_id = %session_id,
+                error = %close_error,
+                "failed to close session after deployment turn start failed"
+            );
+        }
+        return Err(error);
+    }
+
+    let record = create_guard.complete(
+        thread_id.clone(),
+        session_id.clone(),
+        repository.clone(),
+        branch.clone(),
+    );
+    info!(
+        session_id = %session_id,
+        thread_id = %thread_id,
+        expires_at = %record.expires_at,
+        "deployment task started"
+    );
+
+    Ok((
+        StatusCode::ACCEPTED,
+        Json(json!({
+            "threadId": thread_id,
+            "status": "running",
+        })),
+    ))
+}
+
+async fn get_deployment(
+    State(state): State<AppState>,
+    Path(thread_id): Path<String>,
+) -> Result<Json<codex_gateway::deployments::DeploymentStatusResponse>, AppError> {
+    let thread_id = thread_id.trim().to_string();
+    if thread_id.is_empty() {
+        return Err(AppError::bad_request("threadId must not be empty"));
+    }
+
+    let Some(record) = state.deployment_registry.get(&thread_id) else {
+        return Err(AppError::not_found(format!(
+            "Unknown deployment thread: {thread_id}"
+        )));
+    };
+    if let Some(response) = record.terminal_status.clone() {
+        return Ok(Json(response));
+    }
+    if record.is_timed_out() {
+        let response = record.timeout_response();
+        mark_deployment_terminal_and_close(
+            &state,
+            &thread_id,
+            &record.session_id,
+            response.clone(),
+        )
+        .await;
+        return Ok(Json(response));
+    }
+    if state
+        .session_manager
+        .touch_session_for(&record.session_id, state.deployment_registry.timeout())
+        .is_err()
+    {
+        let response = record.stopped_response();
+        mark_deployment_terminal_and_close(
+            &state,
+            &thread_id,
+            &record.session_id,
+            response.clone(),
+        )
+        .await;
+        return Ok(Json(response));
+    }
+
+    info!(thread_id = %thread_id, "reading deployment task");
+    let thread_result = match state
+        .session_manager
+        .read_thread_with_session(&record.session_id, &thread_id)
+        .await
+    {
+        Ok(result) => result,
+        Err(error) if looks_like_missing_thread(&error) => {
+            return Err(AppError::not_found(format!(
+                "Unknown deployment thread: {thread_id}"
+            )));
+        }
+        Err(error) if looks_like_app_server_stopped(&error) => {
+            let response = record.stopped_response();
+            mark_deployment_terminal_and_close(
+                &state,
+                &thread_id,
+                &record.session_id,
+                response.clone(),
+            )
+            .await;
+            return Ok(Json(response));
+        }
+        Err(error) => return Err(error),
+    };
+
+    if thread_result
+        .get("thread")
+        .and_then(|thread| thread.get("id"))
+        .and_then(Value::as_str)
+        .is_none()
+    {
+        return Err(AppError::not_found(format!(
+            "Unknown deployment thread: {thread_id}"
+        )));
+    }
+
+    let response = deployment_status_from_thread(&thread_id, &thread_result);
+    if response.status != "running" {
+        mark_deployment_terminal_and_close(
+            &state,
+            &thread_id,
+            &record.session_id,
+            response.clone(),
+        )
+        .await;
+    }
+    info!(
+        thread_id = %thread_id,
+        status = %response.status,
+        image = response.image.as_deref().unwrap_or("-"),
+        "deployment task read completed"
+    );
+
+    Ok(Json(response))
+}
+
+async fn mark_deployment_terminal_and_close(
+    state: &AppState,
+    thread_id: &str,
+    session_id: &str,
+    response: codex_gateway::deployments::DeploymentStatusResponse,
+) {
+    state
+        .deployment_registry
+        .mark_terminal(thread_id, response.clone());
+
+    match state
+        .session_manager
+        .close_session(session_id, "deployment-terminal")
+        .await
+    {
+        Ok(true) => {
+            info!(
+                session_id = %session_id,
+                thread_id = %thread_id,
+                status = %response.status,
+                "deployment session closed after terminal status"
+            );
+        }
+        Ok(false) => {
+            warn!(
+                session_id = %session_id,
+                thread_id = %thread_id,
+                "deployment session was already closed after terminal status"
+            );
+        }
+        Err(error) => {
+            warn!(
+                session_id = %session_id,
+                thread_id = %thread_id,
+                error = %error,
+                "failed to close deployment session after terminal status"
+            );
+        }
+    }
 }
 
 async fn get_threads(
@@ -510,6 +758,66 @@ fn trim_optional(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn validate_repository(repository: &str) -> Result<(), AppError> {
+    let parts = repository.split('/').collect::<Vec<_>>();
+    if parts.len() != 2 || !is_repository_segment(parts[0]) || !is_repository_segment(parts[1]) {
+        return Err(AppError::bad_request(
+            "repository must use owner/repo format",
+        ));
+    }
+
+    Ok(())
+}
+
+fn is_repository_segment(value: &str) -> bool {
+    !value.is_empty()
+        && value
+            .chars()
+            .all(|ch| ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' || ch == '.')
+}
+
+fn validate_branch(branch: Option<&str>) -> Result<(), AppError> {
+    let Some(branch) = branch else {
+        return Ok(());
+    };
+
+    if branch.len() > 255
+        || branch.starts_with('-')
+        || branch.starts_with('/')
+        || branch.ends_with('/')
+        || branch.ends_with(".lock")
+        || branch.contains("..")
+        || branch.contains("//")
+        || branch
+            .chars()
+            .any(|ch| !ch.is_ascii_alphanumeric() && !matches!(ch, '/' | '-' | '_' | '.' | '#'))
+    {
+        return Err(AppError::bad_request(
+            "branch contains unsupported characters",
+        ));
+    }
+
+    Ok(())
+}
+
+fn looks_like_missing_thread(error: &AppError) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("not found")
+        || message.contains("unknown thread")
+        || message.contains("no thread")
+}
+
+fn looks_like_app_server_stopped(error: &AppError) -> bool {
+    if matches!(error, AppError::ChannelClosed) {
+        return true;
+    }
+
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("app-server process is not available")
+        || message.contains("background task channel closed")
+        || message.contains("channel closed")
+}
+
 fn thread_list_params(query: ThreadListQuery) -> Value {
     let mut params = Map::new();
 
@@ -663,7 +971,10 @@ fn extract_session_id(path: &str) -> Option<String> {
 
 fn extract_thread_id(path: &str) -> Option<String> {
     let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
-    if segments.len() >= 3 && segments[0] == "api" && segments[1] == "threads" {
+    if segments.len() >= 3
+        && segments[0] == "api"
+        && (segments[1] == "threads" || segments[1] == "deployments")
+    {
         Some(segments[2].to_string())
     } else {
         None
