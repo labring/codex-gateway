@@ -220,13 +220,13 @@ Notes:
 
 ## GitHub Container Registry
 
-GitHub Actions can publish this image to GHCR after pushes to `main` and version tags such as `v0.5.1`.
+GitHub Actions can publish this image to GHCR after pushes to `main` and version tags such as `v0.6.0`.
 
 Published tags:
 
 - `ghcr.io/labring/codex-gateway:main` for the latest `main` branch image
 - `ghcr.io/labring/codex-gateway:sha-<commit>` for each published commit
-- `ghcr.io/labring/codex-gateway:v0.5.1`, `0.5.1`, `0.5`, `0`, and `latest` when pushing a version tag
+- `ghcr.io/labring/codex-gateway:v0.6.0`, `0.6.0`, `0.6`, `0`, and `latest` when pushing a version tag
 
 Pull the current `main` image:
 
