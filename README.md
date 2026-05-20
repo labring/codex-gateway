@@ -8,27 +8,22 @@ Generated Qoder documentation may exist under `.qoder/`; it is generated output 
 
 ## Runtime Shape
 
-The default runtime is `embedded`:
+All Gateway sessions use the embedded runtime:
 
 1. A client creates a session through the Rust gateway.
 2. The session owns a `CodexAppServerBridge`.
 3. The bridge starts and manages one `codex app-server` subprocess over stdio.
 4. App-server notifications are folded into session state and streamed to the client over SSE.
 
-The optional `devbox` runtime is a remote execution backend:
+Brain deployment tasks use the same embedded runtime, but expose a polling-only task API instead of the interactive session API. Gateway does not create or manage Devbox runtimes for deployment requests.
 
-1. The outer gateway creates a Devbox runtime.
-2. It waits for the gateway inside Devbox to become ready.
-3. It creates a remote session in that inner gateway.
-4. The inner gateway uses the `embedded` runtime to run `codex app-server`.
-
-`devbox` is runtime infrastructure, not a product mode.
+If deployment work runs in Devbox, an external system is responsible for creating the Devbox and starting this gateway inside it before calling the Brain Deployment API.
 
 ## Brain Deployment API
 
-`POST /api/deployments` is a Brain application reserved API. It is not intended to describe a general deployment product surface.
+`POST /api/brain/deployments` is a Brain application API. It is not intended to describe a general deployment product surface.
 
-The endpoint creates a Codex task that deploys a repository and reports a machine-readable deployment result. When the active session runtime is Devbox-backed, Gateway bootstraps the Devbox runtime before starting the Brain deployment task.
+The endpoint creates a local embedded Codex task that installs the deployment skill if needed, builds the repository image, pushes it to GHCR, generates a Sealos template, and reports a machine-readable deployment result containing both the image reference and template content. It does not expose intermediate Codex output or accept follow-up user turns.
 
 ## HTTP API
 
@@ -44,8 +39,8 @@ The endpoint creates a Codex task that deploys a repository and reports a machin
 - `DELETE /api/sessions/:id`
 - `GET /api/threads`
 - `GET /api/threads/:threadId`
-- `POST /api/deployments`
-- `GET /api/deployments/:threadId`
+- `POST /api/brain/deployments`
+- `GET /api/brain/deployments/:threadId`
 
 Legacy single-session routes such as `/api/state`, `/api/events`, `/api/turn`, and `/api/thread/new` are removed and return `410 Gone`.
 
@@ -89,21 +84,8 @@ Gateway-owned settings use the `CODEX_GATEWAY_` prefix.
 - `CODEX_GATEWAY_MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
 - `CODEX_GATEWAY_SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
 - `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
-- `CODEX_GATEWAY_SESSION_RUNTIME`: session runtime backend. Defaults to `embedded`. Supported values are `embedded` and `devbox`.
-- `CODEX_GATEWAY_MAX_DEPLOYMENTS`: maximum active Brain deployment tasks. Defaults to `4`.
-- `CODEX_GATEWAY_DEPLOYMENT_TIMEOUT_MS`: Brain deployment timeout and session keepalive window. Defaults to `3600000`.
 
-Devbox-related settings are only used when the runtime is `devbox`:
-
-- `CODEX_GATEWAY_DEVBOX_BASE_URL`
-- `CODEX_GATEWAY_DEVBOX_TOKEN`
-- `CODEX_GATEWAY_DEVBOX_JWT_SIGNING_KEY`
-- `CODEX_GATEWAY_DEVBOX_NAMESPACE`
-- `CODEX_GATEWAY_DEVBOX_RUNTIME_IMAGE`
-- `CODEX_GATEWAY_DEVBOX_ARCHIVE_AFTER_PAUSE_TIME`
-- `CODEX_GATEWAY_DEVBOX_WAIT_TIMEOUT_SECONDS`
-- `CODEX_GATEWAY_DEVBOX_GATEWAY_READY_TIMEOUT_SECONDS`
-- `CODEX_GATEWAY_DEVBOX_BOOTSTRAP_TIMEOUT_SECONDS`
+Devbox lifecycle is external to this gateway. If the gateway is running in Devbox, configure the process with the normal gateway settings above.
 
 ## Verification
 

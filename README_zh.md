@@ -8,27 +8,22 @@ Codex Gateway 是一个 Rust HTTP/SSE 网关，用来通过小型 API 和浏览�
 
 ## Runtime 形态
 
-默认 runtime 是 `embedded`：
+所有 Gateway session 都使用 embedded runtime：
 
 1. 客户端通过 Rust gateway 创建 session。
 2. session 拥有一个 `CodexAppServerBridge`。
 3. bridge 通过 stdio 启动并管理一个 `codex app-server` 子进程。
 4. app-server 的通知会写入 session state，并通过 SSE 推给客户端。
 
-可选的 `devbox` runtime 是远端执行后端：
+Brain deployment task 也使用同一个 embedded runtime，但对外暴露的是 polling-only 的任务 API，而不是可交互 session API。Gateway 收到部署请求时不会创建或管理 Devbox runtime。
 
-1. 外层 gateway 创建 Devbox runtime。
-2. 外层 gateway 等待 Devbox 内部的 gateway ready。
-3. 外层 gateway 在内部 gateway 里创建远端 session。
-4. 内部 gateway 使用 `embedded` runtime 运行 `codex app-server`。
-
-`devbox` 是 runtime 基础设施，不是产品模式。
+如果部署工作运行在 Devbox 中，外部系统负责先创建 Devbox，并在 Devbox 内启动这个 gateway，然后再调用 Brain Deployment API。
 
 ## Brain Deployment API
 
-`POST /api/deployments` 是为 Brain 应用预留的接口，不是通用部署产品接口。
+`POST /api/brain/deployments` 是 Brain 应用接口，不是通用部署产品接口。
 
-这个接口会创建一个 Codex task，用来部署仓库并返回机器可读的部署结果。当当前 session runtime 由 Devbox 承载时，Gateway 会先 bootstrap Devbox runtime，再启动 Brain deployment task。
+这个接口会创建一个本地 embedded Codex task。该 task 会按需安装 deployment skill，构建仓库镜像，推送到 GHCR，生成 Sealos template，并返回同时包含镜像地址和 template 内容的机器可读部署结果。接口不暴露 Codex 中间输出，也不接受用户继续输入。
 
 ## HTTP API
 
@@ -44,8 +39,8 @@ Codex Gateway 是一个 Rust HTTP/SSE 网关，用来通过小型 API 和浏览�
 - `DELETE /api/sessions/:id`
 - `GET /api/threads`
 - `GET /api/threads/:threadId`
-- `POST /api/deployments`
-- `GET /api/deployments/:threadId`
+- `POST /api/brain/deployments`
+- `GET /api/brain/deployments/:threadId`
 
 旧的单 session 路由已经移除，例如 `/api/state`、`/api/events`、`/api/turn`、`/api/thread/new`，现在会返回 `410 Gone`。
 
@@ -89,21 +84,8 @@ Gateway 自有配置统一使用 `CODEX_GATEWAY_` 前缀。
 - `CODEX_GATEWAY_MAX_SESSIONS`：最大在线 session 数，默认 `12`
 - `CODEX_GATEWAY_SESSION_TTL_MS`：空闲 session TTL，默认 `1800000`
 - `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`：清理扫描间隔，默认 `60000`
-- `CODEX_GATEWAY_SESSION_RUNTIME`：session runtime backend，默认 `embedded`；支持值只有 `embedded` 和 `devbox`
-- `CODEX_GATEWAY_MAX_DEPLOYMENTS`：最大并发 Brain deployment task 数，默认 `4`
-- `CODEX_GATEWAY_DEPLOYMENT_TIMEOUT_MS`：Brain deployment 超时和 session keepalive 窗口，默认 `3600000`
 
-Devbox 相关配置只在 runtime 为 `devbox` 时使用：
-
-- `CODEX_GATEWAY_DEVBOX_BASE_URL`
-- `CODEX_GATEWAY_DEVBOX_TOKEN`
-- `CODEX_GATEWAY_DEVBOX_JWT_SIGNING_KEY`
-- `CODEX_GATEWAY_DEVBOX_NAMESPACE`
-- `CODEX_GATEWAY_DEVBOX_RUNTIME_IMAGE`
-- `CODEX_GATEWAY_DEVBOX_ARCHIVE_AFTER_PAUSE_TIME`
-- `CODEX_GATEWAY_DEVBOX_WAIT_TIMEOUT_SECONDS`
-- `CODEX_GATEWAY_DEVBOX_GATEWAY_READY_TIMEOUT_SECONDS`
-- `CODEX_GATEWAY_DEVBOX_BOOTSTRAP_TIMEOUT_SECONDS`
+Devbox 生命周期在 gateway 外部管理。如果 gateway 运行在 Devbox 中，仍然只需要配置上面的常规 gateway 设置。
 
 ## 验证
 

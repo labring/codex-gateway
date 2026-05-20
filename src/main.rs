@@ -22,8 +22,9 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use codex_gateway::auth::{AuthState, auth_middleware};
-use codex_gateway::deployments::{
-    DeploymentRegistry, build_deployment_prompt, deployment_status_from_thread,
+use codex_gateway::brain::deployments::{
+    BrainDeploymentRegistry, BrainDeploymentStatusResponse, brain_deployment_status_from_thread,
+    build_brain_deployment_prompt,
 };
 use codex_gateway::error::AppError;
 use codex_gateway::models::BridgeEvent;
@@ -33,7 +34,7 @@ use codex_gateway::{config::AppConfig, session_manager::SessionManager};
 #[derive(Clone)]
 struct AppState {
     session_manager: SessionManager,
-    deployment_registry: DeploymentRegistry,
+    brain_deployment_registry: BrainDeploymentRegistry,
     public_dir: PathBuf,
 }
 
@@ -73,7 +74,7 @@ struct ThreadListQuery {
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct CreateDeploymentRequest {
+struct CreateBrainDeploymentRequest {
     github_token: Option<String>,
     repository: Option<String>,
     branch: Option<String>,
@@ -94,20 +95,18 @@ async fn main() -> Result<(), AppError> {
         auth_enabled = config.auth.is_some(),
         debug = config.debug,
         max_sessions = config.max_sessions,
-        max_deployments = config.max_deployments,
+        brain_deployment_runtime = "embedded",
         session_ttl_ms = config.session_ttl.as_millis() as u64,
-        deployment_timeout_ms = config.deployment_timeout.as_millis() as u64,
         session_sweep_interval_ms = config.session_sweep_interval.as_millis() as u64,
         "gateway configuration loaded"
     );
     maybe_login_with_api_key(&config.codex_bin)?;
 
     let session_manager = SessionManager::new(config.clone());
-    let deployment_registry =
-        DeploymentRegistry::new(config.max_deployments, config.deployment_timeout);
+    let brain_deployment_registry = BrainDeploymentRegistry::new();
     let state = AppState {
         session_manager: session_manager.clone(),
-        deployment_registry,
+        brain_deployment_registry,
         public_dir: config.public_dir.clone(),
     };
 
@@ -155,8 +154,11 @@ fn build_router(state: AppState) -> Router {
             get(legacy_single_session_gone).post(legacy_single_session_gone),
         )
         .route("/api/sessions", post(create_session))
-        .route("/api/deployments", post(create_deployment))
-        .route("/api/deployments/{thread_id}", get(get_deployment))
+        .route("/api/brain/deployments", post(create_brain_deployment))
+        .route(
+            "/api/brain/deployments/{thread_id}",
+            get(get_brain_deployment),
+        )
         .route("/api/threads", get(get_threads))
         .route("/api/threads/{thread_id}", get(get_thread))
         .route("/api/sessions/{id}/state", get(get_session_state))
@@ -262,11 +264,11 @@ async fn create_session(
     })))
 }
 
-async fn create_deployment(
+async fn create_brain_deployment(
     State(state): State<AppState>,
     body: Bytes,
 ) -> Result<impl IntoResponse, AppError> {
-    let request: CreateDeploymentRequest = parse_json_body(body)?;
+    let request: CreateBrainDeploymentRequest = parse_json_body(body)?;
     let github_token = trim_optional(request.github_token)
         .ok_or_else(|| AppError::bad_request("githubToken must not be empty"))?;
     let repository = trim_optional(request.repository)
@@ -275,13 +277,16 @@ async fn create_deployment(
     let branch = trim_optional(request.branch);
     validate_branch(branch.as_deref())?;
 
-    let create_guard = state.deployment_registry.try_begin_create()?;
+    let create_guard = state.brain_deployment_registry.try_begin_create()?;
     info!("creating deployment task");
 
-    let (session_id, _session, snapshot) = state.session_manager.create_session(None, None).await?;
+    let (session_id, _session, snapshot) = state
+        .session_manager
+        .create_brain_deployment_session()
+        .await?;
     state
         .session_manager
-        .touch_session_for(&session_id, state.deployment_registry.timeout())?;
+        .touch_session_for(&session_id, state.brain_deployment_registry.timeout())?;
     let Some(thread_id) = snapshot.thread_id.clone() else {
         if let Err(error) = state
             .session_manager
@@ -299,15 +304,7 @@ async fn create_deployment(
         ));
     };
 
-    let skill_preinstalled = state
-        .session_manager
-        .is_devbox_runtime_session(&session_id)?;
-    let prompt = build_deployment_prompt(
-        &repository,
-        branch.as_deref(),
-        &github_token,
-        skill_preinstalled,
-    );
+    let prompt = build_brain_deployment_prompt(&repository, branch.as_deref(), &github_token);
     if let Err(error) = state
         .session_manager
         .send_prompt(&session_id, &prompt)
@@ -349,16 +346,16 @@ async fn create_deployment(
     ))
 }
 
-async fn get_deployment(
+async fn get_brain_deployment(
     State(state): State<AppState>,
     Path(thread_id): Path<String>,
-) -> Result<Json<codex_gateway::deployments::DeploymentStatusResponse>, AppError> {
+) -> Result<Json<BrainDeploymentStatusResponse>, AppError> {
     let thread_id = thread_id.trim().to_string();
     if thread_id.is_empty() {
         return Err(AppError::bad_request("threadId must not be empty"));
     }
 
-    let Some(record) = state.deployment_registry.get(&thread_id) else {
+    let Some(record) = state.brain_deployment_registry.get(&thread_id) else {
         return Err(AppError::not_found(format!(
             "Unknown deployment thread: {thread_id}"
         )));
@@ -368,7 +365,7 @@ async fn get_deployment(
     }
     if record.is_timed_out() {
         let response = record.timeout_response();
-        mark_deployment_terminal_and_close(
+        mark_brain_deployment_terminal_and_close(
             &state,
             &thread_id,
             &record.session_id,
@@ -379,11 +376,14 @@ async fn get_deployment(
     }
     if state
         .session_manager
-        .touch_session_for(&record.session_id, state.deployment_registry.timeout())
+        .touch_session_for(
+            &record.session_id,
+            state.brain_deployment_registry.timeout(),
+        )
         .is_err()
     {
         let response = record.stopped_response();
-        mark_deployment_terminal_and_close(
+        mark_brain_deployment_terminal_and_close(
             &state,
             &thread_id,
             &record.session_id,
@@ -407,7 +407,7 @@ async fn get_deployment(
         }
         Err(error) if looks_like_app_server_stopped(&error) => {
             let response = record.stopped_response();
-            mark_deployment_terminal_and_close(
+            mark_brain_deployment_terminal_and_close(
                 &state,
                 &thread_id,
                 &record.session_id,
@@ -430,9 +430,9 @@ async fn get_deployment(
         )));
     }
 
-    let response = deployment_status_from_thread(&thread_id, &thread_result);
+    let response = brain_deployment_status_from_thread(&thread_id, &thread_result);
     if response.status != "running" {
-        mark_deployment_terminal_and_close(
+        mark_brain_deployment_terminal_and_close(
             &state,
             &thread_id,
             &record.session_id,
@@ -450,14 +450,14 @@ async fn get_deployment(
     Ok(Json(response))
 }
 
-async fn mark_deployment_terminal_and_close(
+async fn mark_brain_deployment_terminal_and_close(
     state: &AppState,
     thread_id: &str,
     session_id: &str,
-    response: codex_gateway::deployments::DeploymentStatusResponse,
+    response: BrainDeploymentStatusResponse,
 ) {
     state
-        .deployment_registry
+        .brain_deployment_registry
         .mark_terminal(thread_id, response.clone());
 
     match state
@@ -957,11 +957,14 @@ fn extract_session_id(path: &str) -> Option<String> {
 
 fn extract_thread_id(path: &str) -> Option<String> {
     let segments = path.trim_matches('/').split('/').collect::<Vec<_>>();
-    if segments.len() >= 3
-        && segments[0] == "api"
-        && (segments[1] == "threads" || segments[1] == "deployments")
-    {
+    if segments.len() >= 3 && segments[0] == "api" && segments[1] == "threads" {
         Some(segments[2].to_string())
+    } else if segments.len() >= 4
+        && segments[0] == "api"
+        && segments[1] == "brain"
+        && segments[2] == "deployments"
+    {
+        Some(segments[3].to_string())
     } else {
         None
     }
