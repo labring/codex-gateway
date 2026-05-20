@@ -65,6 +65,28 @@ async fn bridge_runs_prompt_round_trip_against_fake_app_server() {
 }
 
 #[tokio::test]
+async fn bridge_keeps_completed_turn_status_when_completion_precedes_start_response() {
+    let fake_codex = fake_codex::build_with_turn_notifications_before_response();
+    let bridge = new_bridge(fake_codex.binary().to_path_buf());
+
+    bridge.start().await.expect("bridge starts");
+    bridge
+        .send_prompt("hello fake app-server")
+        .await
+        .expect("turn/start succeeds");
+
+    let completed = wait_for_state(&bridge, |state| {
+        !state.active_turn && state.last_turn_status.as_deref() == Some("completed")
+    })
+    .await;
+
+    assert_eq!(completed.last_turn_status.as_deref(), Some("completed"));
+    assert_eq!(completed.current_turn_id, None);
+
+    bridge.stop().await.expect("bridge stops");
+}
+
+#[tokio::test]
 async fn bridge_reads_and_resumes_thread_history_against_fake_app_server() {
     let fake_codex = fake_codex::build();
     let bridge = new_bridge(fake_codex.binary().to_path_buf());

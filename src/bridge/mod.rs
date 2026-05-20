@@ -505,11 +505,21 @@ impl CodexAppServerBridge {
                     .map(ToString::to_string);
 
                 self.with_state(|state| {
-                    if let Some(turn_id) = turn_id {
-                        state.current_turn_id = Some(turn_id);
-                    }
-                    if let Some(status) = status {
-                        state.last_turn_status = Some(status);
+                    let matches_active_turn = state.active_turn
+                        && state
+                            .current_turn_id
+                            .as_deref()
+                            .is_none_or(|current_turn_id| {
+                                turn_id.as_deref() == Some(current_turn_id)
+                            });
+
+                    if matches_active_turn {
+                        if let Some(turn_id) = turn_id.as_ref() {
+                            state.current_turn_id = Some(turn_id.clone());
+                        }
+                        if let Some(status) = status.as_ref() {
+                            state.last_turn_status = Some(status.clone());
+                        }
                     }
                 });
                 self.emit_state();

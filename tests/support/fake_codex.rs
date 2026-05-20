@@ -4,7 +4,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const FAKE_CODEX_SOURCE: &str = r##"
-use std::io::{self, BufRead, Write};
+	use std::io::{self, BufRead, Write};
+	
+	const TURN_NOTIFICATIONS_BEFORE_RESPONSE: bool = false;
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -52,16 +54,13 @@ fn main() {
                 std::process::exit(3);
             }
 
-            send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"turn":{{"id":"turn-1","status":"inProgress"}}}}}}"#,
-                id
-            ));
-            send(&mut stdout, r#"{"method":"turn/started","params":{"turn":{"id":"turn-1","status":"inProgress"}}}"#);
-            send(&mut stdout, r#"{"method":"item/started","params":{"item":{"id":"assistant-1","type":"agentMessage","text":""}}}"#);
-            send(&mut stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"fake "}}"#);
-            send(&mut stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"assistant reply"}}"#);
-            send(&mut stdout, r#"{"method":"item/completed","params":{"item":{"id":"assistant-1","type":"agentMessage","status":"completed","text":"fake assistant reply"}}}"#);
-            send(&mut stdout, r#"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#);
+	            if TURN_NOTIFICATIONS_BEFORE_RESPONSE {
+	                send_turn_notifications(&mut stdout);
+	                send_turn_start_response(&mut stdout, id);
+	            } else {
+	                send_turn_start_response(&mut stdout, id);
+	                send_turn_notifications(&mut stdout);
+	            }
         } else if line.contains("\"method\":\"thread/read\"") {
             let thread = if line.contains("\"threadId\":\"thread-1\"") {
                 deployment_thread_json()
@@ -111,11 +110,27 @@ fn deployment_thread_json() -> &'static str {
     r#"{"id":"thread-1","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"deploy-user","type":"userMessage","content":[{"type":"text","text":"deploy user marker DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"template\":\"wrong\",\"message\":\"wrong\",\"error\":null}"}]},{"id":"deploy-assistant","type":"agentMessage","text":"Deployment image pushed to GHCR\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\nmetadata:\\n  name: owner-repo\\n\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"}]}]}"#
 }
 
-fn send(stdout: &mut io::Stdout, message: &str) {
-    writeln!(stdout, "{message}").expect("write fake response");
-    stdout.flush().expect("flush fake response");
-}
-"##;
+	fn send(stdout: &mut io::Stdout, message: &str) {
+	    writeln!(stdout, "{message}").expect("write fake response");
+	    stdout.flush().expect("flush fake response");
+	}
+	
+	fn send_turn_start_response(stdout: &mut io::Stdout, id: u64) {
+	    send(stdout, &format!(
+	        r#"{{"id":{},"result":{{"turn":{{"id":"turn-1","status":"inProgress"}}}}}}"#,
+	        id
+	    ));
+	}
+	
+	fn send_turn_notifications(stdout: &mut io::Stdout) {
+	    send(stdout, r#"{"method":"turn/started","params":{"turn":{"id":"turn-1","status":"inProgress"}}}"#);
+	    send(stdout, r#"{"method":"item/started","params":{"item":{"id":"assistant-1","type":"agentMessage","text":""}}}"#);
+	    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"fake "}}"#);
+	    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"assistant reply"}}"#);
+	    send(stdout, r#"{"method":"item/completed","params":{"item":{"id":"assistant-1","type":"agentMessage","status":"completed","text":"fake assistant reply"}}}"#);
+	    send(stdout, r#"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#);
+	}
+	"##;
 
 pub struct FakeCodex {
     binary: PathBuf,
@@ -135,6 +150,18 @@ impl Drop for FakeCodex {
 }
 
 pub fn build() -> FakeCodex {
+    build_from_source(FAKE_CODEX_SOURCE)
+}
+
+#[allow(dead_code)]
+pub fn build_with_turn_notifications_before_response() -> FakeCodex {
+    build_from_source(&FAKE_CODEX_SOURCE.replace(
+        "const TURN_NOTIFICATIONS_BEFORE_RESPONSE: bool = false;",
+        "const TURN_NOTIFICATIONS_BEFORE_RESPONSE: bool = true;",
+    ))
+}
+
+fn build_from_source(source_text: &str) -> FakeCodex {
     let temp_dir = std::env::temp_dir().join(format!(
         "codex-gateway-fake-codex-{}-{}",
         std::process::id(),
@@ -147,7 +174,7 @@ pub fn build() -> FakeCodex {
 
     let source = temp_dir.join("fake_codex.rs");
     let binary = temp_dir.join(format!("fake-codex{}", std::env::consts::EXE_SUFFIX));
-    fs::write(&source, FAKE_CODEX_SOURCE).expect("write fake codex source");
+    fs::write(&source, source_text).expect("write fake codex source");
 
     let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_string());
     let output = Command::new(rustc)
