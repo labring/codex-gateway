@@ -3,8 +3,6 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use jsonwebtoken::{Algorithm, EncodingKey, Header, encode};
-use serde::Serialize;
 use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast::Receiver;
@@ -12,11 +10,9 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::bridge::{BridgeOptions, CodexAppServerBridge};
-use crate::config::{AppConfig, AuthConfig, SessionRuntimeMode};
-use crate::devbox::{DevboxRuntime, DevboxRuntimeManager};
+use crate::config::AppConfig;
 use crate::error::AppError;
 use crate::models::{BridgeEvent, BridgeStateSnapshot, SessionInfo};
-use crate::remote_gateway::{RemoteGatewayClient, RemoteSession};
 
 #[derive(Clone)]
 pub struct SessionManager {
@@ -25,7 +21,6 @@ pub struct SessionManager {
 
 struct SessionManagerInner {
     config: AppConfig,
-    devbox_runtime_manager: Option<DevboxRuntimeManager>,
     started_at: Instant,
     sessions: RwLock<HashMap<String, Arc<Session>>>,
     create_lock: Mutex<()>,
@@ -39,14 +34,6 @@ struct Session {
 
 enum SessionBackend {
     Embedded { bridge: CodexAppServerBridge },
-    RemoteDevbox(Box<RemoteDevboxBackend>),
-}
-
-struct RemoteDevboxBackend {
-    runtime: DevboxRuntime,
-    gateway: RemoteGatewayClient,
-    remote_session_id: String,
-    state: RwLock<BridgeStateSnapshot>,
 }
 
 struct SessionMetadata {
@@ -59,7 +46,6 @@ impl SessionManager {
     pub fn new(config: AppConfig) -> Self {
         let manager = Self {
             inner: Arc::new(SessionManagerInner {
-                devbox_runtime_manager: config.devbox.clone().map(DevboxRuntimeManager::new),
                 config,
                 started_at: Instant::now(),
                 sessions: RwLock::new(HashMap::new()),
@@ -112,7 +98,7 @@ impl SessionManager {
         );
         let metadata = Arc::new(SessionMetadata::new(self.inner.config.session_ttl));
         let backend = self
-            .create_session_backend(&id, model, resume_thread_id, &metadata)
+            .create_embedded_backend(model, resume_thread_id, &metadata)
             .await?;
 
         let session = Arc::new(Session {
@@ -187,6 +173,47 @@ impl SessionManager {
         session.read_thread(thread_id).await
     }
 
+    pub async fn create_brain_deployment_session(
+        &self,
+    ) -> Result<(String, SessionInfo, BridgeStateSnapshot), AppError> {
+        let _guard = self.inner.create_lock.lock().await;
+        self.sweep_expired_sessions().await;
+
+        if self.count() >= self.inner.config.max_sessions {
+            warn!(
+                active_sessions = self.count(),
+                max_sessions = self.inner.config.max_sessions,
+                "maximum concurrent sessions reached"
+            );
+            return Err(AppError::service_unavailable(format!(
+                "Maximum concurrent sessions reached ({})",
+                self.inner.config.max_sessions
+            )));
+        }
+
+        let id = Uuid::new_v4().to_string();
+        info!(session_id = %id, "allocating Brain deployment session");
+        let metadata = Arc::new(SessionMetadata::new(self.inner.config.session_ttl));
+        let backend = self.create_embedded_backend(None, None, &metadata).await?;
+
+        let session = Arc::new(Session {
+            id: id.clone(),
+            backend,
+            metadata,
+        });
+        let info = session.info();
+        let state = session.state();
+
+        self.inner
+            .sessions
+            .write()
+            .unwrap()
+            .insert(id.clone(), session);
+        info!("Brain deployment session created {}", id);
+
+        Ok((id, info, state))
+    }
+
     pub fn get_state(&self, session_id: &str) -> Result<BridgeStateSnapshot, AppError> {
         let session = self.require_session(session_id)?;
         Ok(session.state())
@@ -200,15 +227,7 @@ impl SessionManager {
     pub fn touch_session_for(&self, session_id: &str, ttl: Duration) -> Result<(), AppError> {
         let session = self.require_session(session_id)?;
         session.metadata.touch(ttl);
-        if session.is_devbox_runtime() {
-            session.refresh_devbox_lease(ttl)?;
-        }
         Ok(())
-    }
-
-    pub fn is_devbox_runtime_session(&self, session_id: &str) -> Result<bool, AppError> {
-        let session = self.require_session(session_id)?;
-        Ok(session.is_devbox_runtime())
     }
 
     pub fn subscribe(
@@ -219,11 +238,6 @@ impl SessionManager {
         info!(session_id = %session_id, "subscribing to session events");
         let receiver = match &session.backend {
             SessionBackend::Embedded { bridge } => bridge.subscribe(),
-            SessionBackend::RemoteDevbox(_) => {
-                return Err(AppError::internal(
-                    "Remote Devbox session events are not proxied yet",
-                ));
-            }
         };
         Ok((session.info(), session.state(), receiver))
     }
@@ -304,23 +318,6 @@ impl SessionManager {
         Ok(())
     }
 
-    async fn create_session_backend(
-        &self,
-        session_id: &str,
-        model: Option<String>,
-        resume_thread_id: Option<String>,
-        metadata: &Arc<SessionMetadata>,
-    ) -> Result<SessionBackend, AppError> {
-        if self.inner.config.session_runtime == SessionRuntimeMode::Devbox {
-            return self
-                .create_remote_devbox_backend(session_id, model, resume_thread_id)
-                .await;
-        }
-
-        self.create_embedded_backend(model, resume_thread_id, metadata)
-            .await
-    }
-
     async fn create_embedded_backend(
         &self,
         model: Option<String>,
@@ -348,59 +345,6 @@ impl SessionManager {
         }
 
         Ok(SessionBackend::Embedded { bridge })
-    }
-
-    async fn create_remote_devbox_backend(
-        &self,
-        session_id: &str,
-        model: Option<String>,
-        resume_thread_id: Option<String>,
-    ) -> Result<SessionBackend, AppError> {
-        let manager = self
-            .inner
-            .devbox_runtime_manager
-            .as_ref()
-            .ok_or_else(|| AppError::internal("Devbox runtime manager is not configured"))?;
-
-        info!(session_id = %session_id, "creating devbox runtime for session");
-        let runtime = manager
-            .create_for_session(session_id, self.inner.config.session_ttl)
-            .await?;
-        info!("devbox runtime ready for session");
-
-        let gateway_url = runtime
-            .gateway_url
-            .clone()
-            .ok_or_else(|| AppError::internal("Devbox gateway URL is not available"))?;
-        let gateway_auth_token = runtime
-            .gateway_auth_token
-            .clone()
-            .or_else(|| create_gateway_auth_token(self.inner.config.auth.as_ref()));
-        let gateway = RemoteGatewayClient::with_auth_token(gateway_url, gateway_auth_token);
-        if let Err(error) = gateway
-            .wait_for_ready(manager.config().gateway_ready_timeout)
-            .await
-        {
-            runtime.cleanup_after_create_failure().await;
-            return Err(error.into());
-        }
-        let RemoteSession { id, info: _, state } =
-            match gateway.create_session(model, resume_thread_id).await {
-                Ok(session) => session,
-                Err(error) => {
-                    runtime.cleanup_after_create_failure().await;
-                    return Err(error.into());
-                }
-            };
-
-        let backend = RemoteDevboxBackend {
-            runtime,
-            gateway,
-            remote_session_id: id,
-            state: RwLock::new(state),
-        };
-
-        Ok(SessionBackend::RemoteDevbox(Box::new(backend)))
     }
 
     async fn sweep_expired_sessions(&self) {
@@ -471,31 +415,6 @@ impl SessionManager {
     }
 }
 
-#[derive(Debug, Serialize)]
-struct GatewayAuthClaims {
-    exp: usize,
-    iat: usize,
-}
-
-fn create_gateway_auth_token(auth: Option<&AuthConfig>) -> Option<String> {
-    let auth = auth?;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|duration| duration.as_secs() as usize)
-        .unwrap_or_default();
-    let claims = GatewayAuthClaims {
-        iat: now,
-        exp: now + 24 * 60 * 60,
-    };
-
-    encode(
-        &Header::new(Algorithm::HS256),
-        &claims,
-        &EncodingKey::from_secret(auth.jwt_secret.as_bytes()),
-    )
-    .ok()
-}
-
 impl Session {
     fn info(&self) -> SessionInfo {
         SessionInfo {
@@ -509,44 +428,18 @@ impl Session {
     fn state(&self) -> BridgeStateSnapshot {
         match &self.backend {
             SessionBackend::Embedded { bridge } => bridge.get_state(),
-            SessionBackend::RemoteDevbox(backend) => backend.state.read().unwrap().clone(),
-        }
-    }
-
-    fn is_devbox_runtime(&self) -> bool {
-        matches!(self.backend, SessionBackend::RemoteDevbox(_))
-    }
-
-    fn refresh_devbox_lease(&self, ttl: Duration) -> Result<(), AppError> {
-        match &self.backend {
-            SessionBackend::Embedded { .. } => Ok(()),
-            SessionBackend::RemoteDevbox(backend) => {
-                let runtime = backend.runtime.clone();
-                tokio::spawn(async move {
-                    if runtime.refresh_pause_for(ttl).await.is_err() {
-                        warn!("devbox runtime lease refresh failed");
-                    }
-                });
-                Ok(())
-            }
         }
     }
 
     async fn list_threads(&self, params: Value) -> Result<Value, AppError> {
         match &self.backend {
             SessionBackend::Embedded { bridge } => bridge.list_threads(params).await,
-            SessionBackend::RemoteDevbox(backend) => {
-                Ok(backend.gateway.list_threads(params).await?)
-            }
         }
     }
 
     async fn read_thread(&self, thread_id: &str) -> Result<Value, AppError> {
         match &self.backend {
             SessionBackend::Embedded { bridge } => bridge.read_thread(thread_id).await,
-            SessionBackend::RemoteDevbox(backend) => {
-                Ok(backend.gateway.read_thread(thread_id).await?)
-            }
         }
     }
 
@@ -556,14 +449,6 @@ impl Session {
                 bridge.send_prompt(prompt).await?;
                 Ok(bridge.get_state())
             }
-            SessionBackend::RemoteDevbox(backend) => {
-                let snapshot = backend
-                    .gateway
-                    .send_prompt(&backend.remote_session_id, prompt)
-                    .await?;
-                *backend.state.write().unwrap() = snapshot.clone();
-                Ok(snapshot)
-            }
         }
     }
 
@@ -572,14 +457,6 @@ impl Session {
             SessionBackend::Embedded { bridge } => {
                 bridge.interrupt_turn().await?;
                 Ok(bridge.get_state())
-            }
-            SessionBackend::RemoteDevbox(backend) => {
-                let snapshot = backend
-                    .gateway
-                    .interrupt_turn(&backend.remote_session_id)
-                    .await?;
-                *backend.state.write().unwrap() = snapshot.clone();
-                Ok(snapshot)
             }
         }
     }
@@ -593,14 +470,6 @@ impl Session {
                 bridge.start_new_thread(model).await?;
                 Ok(bridge.get_state())
             }
-            SessionBackend::RemoteDevbox(backend) => {
-                let snapshot = backend
-                    .gateway
-                    .start_new_thread(&backend.remote_session_id, model)
-                    .await?;
-                *backend.state.write().unwrap() = snapshot.clone();
-                Ok(snapshot)
-            }
         }
     }
 
@@ -610,14 +479,6 @@ impl Session {
                 bridge.resume_thread(thread_id).await?;
                 Ok(bridge.get_state())
             }
-            SessionBackend::RemoteDevbox(backend) => {
-                let snapshot = backend
-                    .gateway
-                    .resume_thread(&backend.remote_session_id, thread_id)
-                    .await?;
-                *backend.state.write().unwrap() = snapshot.clone();
-                Ok(snapshot)
-            }
         }
     }
 
@@ -626,20 +487,6 @@ impl Session {
             SessionBackend::Embedded { bridge } => {
                 bridge.broadcast_session_closed(&self.id, reason);
                 bridge.stop().await
-            }
-            SessionBackend::RemoteDevbox(backend) => {
-                if backend
-                    .gateway
-                    .delete_session(&backend.remote_session_id)
-                    .await
-                    .is_err()
-                {
-                    warn!("remote devbox session cleanup failed");
-                }
-                if backend.runtime.delete().await.is_err() {
-                    warn!("devbox runtime cleanup failed");
-                }
-                Ok(())
             }
         }
     }

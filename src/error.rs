@@ -16,10 +16,6 @@ pub enum AppError {
     Json(#[from] serde_json::Error),
     #[error(transparent)]
     Runtime(#[from] crate::runtime::RuntimeError),
-    #[error(transparent)]
-    Devbox(#[from] crate::devbox::DevboxError),
-    #[error(transparent)]
-    RemoteGateway(#[from] crate::remote_gateway::RemoteGatewayError),
     #[error("Background task channel closed")]
     ChannelClosed,
 }
