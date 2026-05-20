@@ -127,6 +127,12 @@ impl BrainDeploymentRegistry {
     }
 }
 
+impl Default for BrainDeploymentRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BrainDeploymentRecord {
     fn new(
         thread_id: String,
