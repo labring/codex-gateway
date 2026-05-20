@@ -23,7 +23,7 @@ If deployment work runs in Devbox, an external system is responsible for creatin
 
 `POST /api/brain/deployments` is a Brain application API. It is not intended to describe a general deployment product surface.
 
-The endpoint creates a local embedded Codex task that installs the deployment skill if needed, builds the repository image, pushes it to GHCR, and reports a machine-readable deployment result. It does not expose intermediate Codex output or accept follow-up user turns.
+The endpoint creates a local embedded Codex task that installs the deployment skill if needed, builds the repository image, pushes it to GHCR, generates a Sealos template, and reports a machine-readable deployment result containing both the image reference and template content. It does not expose intermediate Codex output or accept follow-up user turns.
 
 ## HTTP API
 

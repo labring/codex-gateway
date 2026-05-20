@@ -48,6 +48,7 @@ pub struct BrainDeploymentStatusResponse {
     pub status: String,
     pub message: String,
     pub image: Option<String>,
+    pub template: Option<String>,
     pub error: Option<String>,
 }
 
@@ -55,6 +56,7 @@ pub struct BrainDeploymentStatusResponse {
 struct BrainDeploymentResultLine {
     status: String,
     image: Option<String>,
+    template: Option<String>,
     message: Option<String>,
     error: Option<String>,
 }
@@ -156,6 +158,7 @@ impl BrainDeploymentRecord {
             status: "failed".to_string(),
             message: "Deployment failed".to_string(),
             image: None,
+            template: None,
             error: Some("Deployment timed out before producing a result".to_string()),
         }
     }
@@ -166,6 +169,7 @@ impl BrainDeploymentRecord {
             status: "failed".to_string(),
             message: "Deployment failed".to_string(),
             image: None,
+            template: None,
             error: Some("Deployment session is no longer running".to_string()),
         }
     }
@@ -219,7 +223,7 @@ pub fn build_brain_deployment_prompt(
         .unwrap_or_else(|| "Use the repository default branch.".to_string());
     let skill_instruction = if skill_preinstalled {
         format!(
-            "The deployment skill has already been installed by the gateway runtime bootstrap. Use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, and report the pushed image reference."
+            "The deployment skill has already been installed by the gateway runtime bootstrap. Use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, generate a Sealos template, and report the pushed image reference plus the template content."
         )
     } else {
         format!(
@@ -228,7 +232,7 @@ pub fn build_brain_deployment_prompt(
 npx --yes skills add https://github.com/zjy365/seakills/tree/sandbox-skill-lite -y
 - If the install command fails, stop and return a failed `DEPLOYMENT_RESULT` with the install failure reason.
 
-After the skill is installed, use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, and report the pushed image reference."#
+After the skill is installed, use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, generate a Sealos template, and report the pushed image reference plus the template content."#
         )
     };
 
@@ -247,15 +251,17 @@ Constraints:
 - Do not ask follow-up questions.
 - Let the deployment workflow decide the GHCR image tag unless it already has a safer project-specific convention.
 - Do not guess or fabricate the image reference. Only report an image that was actually pushed successfully.
+- After the deployment workflow generates `.sealos/template/index.yaml`, read that file and include its full YAML content in the final result `template` field.
+- Do not report success unless `.sealos/template/index.yaml` exists and has non-empty content.
 
 Final machine-readable result:
 - The final assistant message must contain exactly one result line.
 - That line must start with `DEPLOYMENT_RESULT:` followed by compact JSON.
-- The JSON object must contain `status`, `image`, `message`, and `error`.
-- On success, use this exact one-line shape, replacing only the image and message values:
-DEPLOYMENT_RESULT: {{"status":"succeeded","image":"ghcr.io/owner/repo:tag","message":"Deployment image pushed to GHCR","error":null}}
+- The JSON object must contain `status`, `image`, `template`, `message`, and `error`.
+- On success, use this exact one-line shape, replacing only the image, template, and message values:
+DEPLOYMENT_RESULT: {{"status":"succeeded","image":"ghcr.io/owner/repo:tag","template":"apiVersion: app.sealos.io/v1\nkind: Template\n...","message":"Deployment image pushed to GHCR and Sealos template generated","error":null}}
 - On failure, use this exact one-line shape, replacing only the message and error values:
-DEPLOYMENT_RESULT: {{"status":"failed","image":null,"message":"Deployment failed","error":"Concise failure reason"}}
+DEPLOYMENT_RESULT: {{"status":"failed","image":null,"template":null,"message":"Deployment failed","error":"Concise failure reason"}}
 - Do not wrap the result line in Markdown or add any other text after it."#
     )
 }
@@ -275,6 +281,7 @@ pub fn brain_deployment_status_from_thread(
             status: "failed".to_string(),
             message: "Deployment failed".to_string(),
             image: None,
+            template: None,
             error: Some(error),
         },
         BrainDeploymentResultState::Missing if thread_is_active(thread) => {
@@ -283,6 +290,7 @@ pub fn brain_deployment_status_from_thread(
                 status: "running".to_string(),
                 message: "Deployment is still running".to_string(),
                 image: None,
+                template: None,
                 error: None,
             }
         }
@@ -291,6 +299,7 @@ pub fn brain_deployment_status_from_thread(
             status: "failed".to_string(),
             message: "Deployment failed".to_string(),
             image: None,
+            template: None,
             error: Some("Deployment result was not found in thread history".to_string()),
         },
     }
@@ -309,16 +318,32 @@ fn brain_deployment_response_from_result(
                     status: "failed".to_string(),
                     message: "Deployment failed".to_string(),
                     image: None,
+                    template: None,
                     error: Some("Deployment result did not include a valid GHCR image".to_string()),
+                };
+            }
+            let template = non_empty_optional(result.template);
+            if template.is_none() {
+                return BrainDeploymentStatusResponse {
+                    thread_id: thread_id.to_string(),
+                    status: "failed".to_string(),
+                    message: "Deployment failed".to_string(),
+                    image: None,
+                    template: None,
+                    error: Some(
+                        "Deployment result did not include a non-empty Sealos template".to_string(),
+                    ),
                 };
             }
 
             BrainDeploymentStatusResponse {
                 thread_id: thread_id.to_string(),
                 status: "succeeded".to_string(),
-                message: trim_optional(result.message)
-                    .unwrap_or_else(|| "Deployment image pushed to GHCR".to_string()),
+                message: trim_optional(result.message).unwrap_or_else(|| {
+                    "Deployment image pushed to GHCR and Sealos template generated".to_string()
+                }),
                 image,
+                template,
                 error: None,
             }
         }
@@ -329,7 +354,18 @@ fn brain_deployment_response_from_result(
                     status: "failed".to_string(),
                     message: "Deployment failed".to_string(),
                     image: None,
+                    template: None,
                     error: Some("Failed deployment result must not include an image".to_string()),
+                };
+            }
+            if result.template.is_some() {
+                return BrainDeploymentStatusResponse {
+                    thread_id: thread_id.to_string(),
+                    status: "failed".to_string(),
+                    message: "Deployment failed".to_string(),
+                    image: None,
+                    template: None,
+                    error: Some("Failed deployment result must not include a template".to_string()),
                 };
             }
 
@@ -339,6 +375,7 @@ fn brain_deployment_response_from_result(
                 message: trim_optional(result.message)
                     .unwrap_or_else(|| "Deployment failed".to_string()),
                 image: None,
+                template: None,
                 error: trim_optional(result.error)
                     .or_else(|| Some("Deployment failed without an error message".to_string())),
             }
@@ -348,6 +385,7 @@ fn brain_deployment_response_from_result(
             status: "failed".to_string(),
             message: "Deployment failed".to_string(),
             image: None,
+            template: None,
             error: Some(format!("Unsupported deployment result status: {other}")),
         },
     }
@@ -425,7 +463,7 @@ fn parse_brain_deployment_result_from_text(
         }
         let value = serde_json::from_str::<Value>(json_text)
             .map_err(|error| format!("Failed to parse deployment result JSON: {error}"))?;
-        for key in ["status", "image", "message", "error"] {
+        for key in ["status", "image", "template", "message", "error"] {
             if value.get(key).is_none() {
                 return Err(format!("Deployment result JSON is missing `{key}`"));
             }
@@ -503,6 +541,10 @@ fn trim_optional(value: Option<String>) -> Option<String> {
         .filter(|value| !value.is_empty())
 }
 
+fn non_empty_optional(value: Option<String>) -> Option<String> {
+    value.filter(|value| !value.trim().is_empty())
+}
+
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -522,11 +564,12 @@ mod tests {
         assert!(prompt.contains("Mandatory first step"));
         assert!(prompt.contains("Do not guess or fabricate the image reference"));
         assert!(prompt.contains(
-            r#"DEPLOYMENT_RESULT: {"status":"succeeded","image":"ghcr.io/owner/repo:tag","message":"Deployment image pushed to GHCR","error":null}"#
+            r#"DEPLOYMENT_RESULT: {"status":"succeeded","image":"ghcr.io/owner/repo:tag","template":"apiVersion: app.sealos.io/v1\nkind: Template\n...","message":"Deployment image pushed to GHCR and Sealos template generated","error":null}"#
         ));
         assert!(prompt.contains(
-            r#"DEPLOYMENT_RESULT: {"status":"failed","image":null,"message":"Deployment failed","error":"Concise failure reason"}"#
+            r#"DEPLOYMENT_RESULT: {"status":"failed","image":null,"template":null,"message":"Deployment failed","error":"Concise failure reason"}"#
         ));
+        assert!(prompt.contains(".sealos/template/index.yaml"));
         assert!(prompt.contains("Do not wrap the result line in Markdown"));
     }
 
@@ -553,13 +596,13 @@ mod tests {
                                 "content": [
                                     {
                                         "type": "text",
-                                        "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"message\":\"wrong\",\"error\":null}"
+                                        "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"template\":\"wrong\",\"message\":\"wrong\",\"error\":null}"
                                     }
                                 ]
                             },
                             {
                                 "type": "agentMessage",
-                                "text": "done\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"
+                                "text": "done\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\nmetadata:\\n  name: owner-repo\\n\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"
                             }
                         ]
                     }
@@ -573,6 +616,10 @@ mod tests {
         assert_eq!(
             status.image.as_deref(),
             Some("ghcr.io/owner/repo:sha-abcdef0")
+        );
+        assert_eq!(
+            status.template.as_deref(),
+            Some("apiVersion: app.sealos.io/v1\nkind: Template\nmetadata:\n  name: owner-repo\n")
         );
     }
 
@@ -589,6 +636,7 @@ mod tests {
 
         assert_eq!(status.status, "running");
         assert_eq!(status.image, None);
+        assert_eq!(status.template, None);
         assert_eq!(status.error, None);
     }
 
@@ -625,7 +673,7 @@ mod tests {
                         "items": [
                             {
                                 "type": "agentMessage",
-                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":null,\"message\":\"done\",\"error\":null}"
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":null,\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"done\",\"error\":null}"
                             }
                         ]
                     }
@@ -640,6 +688,56 @@ mod tests {
     }
 
     #[test]
+    fn deployment_status_requires_template_on_success() {
+        let thread = json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [
+                    {
+                        "status": "completed",
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":null,\"message\":\"done\",\"error\":null}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let status = brain_deployment_status_from_thread("thread-1", &thread);
+
+        assert_eq!(status.status, "failed");
+        assert!(status.error.as_deref().unwrap_or("").contains("template"));
+    }
+
+    #[test]
+    fn deployment_status_rejects_template_on_failure() {
+        let thread = json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [
+                    {
+                        "status": "completed",
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"failed\",\"image\":null,\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"failed\",\"error\":\"build failed\"}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let status = brain_deployment_status_from_thread("thread-1", &thread);
+
+        assert_eq!(status.status, "failed");
+        assert!(status.error.as_deref().unwrap_or("").contains("template"));
+    }
+
+    #[test]
     fn deployment_status_requires_ghcr_image_on_success() {
         let thread = json!({
             "thread": {
@@ -650,7 +748,7 @@ mod tests {
                         "items": [
                             {
                                 "type": "agentMessage",
-                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"docker.io/owner/repo:sha-abcdef0\",\"message\":\"done\",\"error\":null}"
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"docker.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"done\",\"error\":null}"
                             }
                         ]
                     }
@@ -675,7 +773,7 @@ mod tests {
                         "items": [
                             {
                                 "type": "agentMessage",
-                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-old\",\"message\":\"old\",\"error\":null}"
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-old\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"old\",\"error\":null}"
                             }
                         ]
                     },
@@ -715,7 +813,7 @@ mod tests {
                         "items": [
                             {
                                 "type": "agentMessage",
-                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"message\":\"done\",\"error\":null}\nextra"
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"done\",\"error\":null}\nextra"
                             }
                         ]
                     }

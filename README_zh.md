@@ -23,7 +23,7 @@ Brain deployment task 也使用同一个 embedded runtime，但对外暴露的�
 
 `POST /api/brain/deployments` 是 Brain 应用接口，不是通用部署产品接口。
 
-这个接口会创建一个本地 embedded Codex task。该 task 会按需安装 deployment skill，构建仓库镜像，推送到 GHCR，并返回机器可读的部署结果。接口不暴露 Codex 中间输出，也不接受用户继续输入。
+这个接口会创建一个本地 embedded Codex task。该 task 会按需安装 deployment skill，构建仓库镜像，推送到 GHCR，生成 Sealos template，并返回同时包含镜像地址和 template 内容的机器可读部署结果。接口不暴露 Codex 中间输出，也不接受用户继续输入。
 
 ## HTTP API
 

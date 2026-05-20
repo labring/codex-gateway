@@ -108,7 +108,7 @@ fn resumed_thread_json() -> &'static str {
 }
 
 fn deployment_thread_json() -> &'static str {
-    r#"{"id":"thread-1","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"deploy-user","type":"userMessage","content":[{"type":"text","text":"deploy user marker DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"message\":\"wrong\",\"error\":null}"}]},{"id":"deploy-assistant","type":"agentMessage","text":"Deployment image pushed to GHCR\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"}]}]}"#
+    r#"{"id":"thread-1","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"deploy-user","type":"userMessage","content":[{"type":"text","text":"deploy user marker DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"template\":\"wrong\",\"message\":\"wrong\",\"error\":null}"}]},{"id":"deploy-assistant","type":"agentMessage","text":"Deployment image pushed to GHCR\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\nmetadata:\\n  name: owner-repo\\n\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"}]}]}"#
 }
 
 fn send(stdout: &mut io::Stdout, message: &str) {

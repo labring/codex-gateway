@@ -155,6 +155,10 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
         deployment_status.get("image").and_then(Value::as_str),
         Some("ghcr.io/owner/repo:sha-abcdef0")
     );
+    assert_eq!(
+        deployment_status.get("template").and_then(Value::as_str),
+        Some("apiVersion: app.sealos.io/v1\nkind: Template\nmetadata:\n  name: owner-repo\n")
+    );
 
     let (status, resumed) = gateway.json_request(
         "POST",
