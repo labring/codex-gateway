@@ -216,25 +216,18 @@ pub fn build_brain_deployment_prompt(
     repository: &str,
     branch: Option<&str>,
     github_token: &str,
-    skill_preinstalled: bool,
 ) -> String {
     let branch_instruction = branch
         .map(|branch| format!("Use branch `{branch}`."))
         .unwrap_or_else(|| "Use the repository default branch.".to_string());
-    let skill_instruction = if skill_preinstalled {
-        format!(
-            "The deployment skill has already been installed by the gateway runtime bootstrap. Use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, generate a Sealos template, and report the pushed image reference plus the template content."
-        )
-    } else {
-        format!(
-            r#"Mandatory first step:
+    let skill_instruction = format!(
+        r#"Mandatory first step:
 - Install the deployment skill before doing anything else:
 npx --yes skills add https://github.com/zjy365/seakills/tree/sandbox-skill-lite -y
 - If the install command fails, stop and return a failed `DEPLOYMENT_RESULT` with the install failure reason.
 
 After the skill is installed, use the {BRAIN_DEPLOYMENT_SKILL_TRIGGER} deployment workflow if it is available. If it is unavailable, perform the equivalent workflow: inspect the repository, generate or reuse a Dockerfile, verify the image build, publish the image to GHCR, generate a Sealos template, and report the pushed image reference plus the template content."#
-        )
-    };
+    );
 
     format!(
         r#"You are running a repository deployment requested through Codex Gateway.
@@ -323,7 +316,7 @@ fn brain_deployment_response_from_result(
                 };
             }
             let template = non_empty_optional(result.template);
-            if template.is_none() {
+            if !template.as_deref().is_some_and(is_valid_sealos_template) {
                 return BrainDeploymentStatusResponse {
                     thread_id: thread_id.to_string(),
                     status: "failed".to_string(),
@@ -417,6 +410,8 @@ fn find_brain_deployment_result(thread: &Value) -> BrainDeploymentResultState {
                     Err(error) => return BrainDeploymentResultState::Invalid(error),
                 }
             }
+
+            return BrainDeploymentResultState::Missing;
         }
     }
 
@@ -497,6 +492,27 @@ fn is_valid_ghcr_image(image: &str) -> bool {
             || rest.contains("@sha256:"))
 }
 
+fn is_valid_sealos_template(template: &str) -> bool {
+    let template = template.trim();
+    if template.is_empty()
+        || template.contains('\0')
+        || template == ".sealos/template/index.yaml"
+        || template.ends_with("/.sealos/template/index.yaml")
+        || template.ends_with(".sealos/template/index.yaml")
+    {
+        return false;
+    }
+
+    let has_api_version = template
+        .lines()
+        .any(|line| line.trim_start().starts_with("apiVersion:"));
+    let has_kind = template
+        .lines()
+        .any(|line| line.trim_start().starts_with("kind:"));
+
+    has_api_version && has_kind
+}
+
 fn thread_is_active(thread: &Value) -> bool {
     if status_value_is_active(thread.get("status")) {
         return true;
@@ -553,7 +569,7 @@ mod tests {
 
     #[test]
     fn deployment_prompt_includes_exact_result_shapes() {
-        let prompt = build_brain_deployment_prompt("owner/repo", Some("main"), "ghp_secret", false);
+        let prompt = build_brain_deployment_prompt("owner/repo", Some("main"), "ghp_secret");
 
         assert!(prompt.contains("Repository: owner/repo"));
         assert!(prompt.contains("Use branch `main`."));
@@ -571,15 +587,6 @@ mod tests {
         ));
         assert!(prompt.contains(".sealos/template/index.yaml"));
         assert!(prompt.contains("Do not wrap the result line in Markdown"));
-    }
-
-    #[test]
-    fn deployment_prompt_skips_skill_install_when_runtime_bootstrapped() {
-        let prompt = build_brain_deployment_prompt("owner/repo", None, "ghp_secret", true);
-
-        assert!(prompt.contains("deployment skill has already been installed"));
-        assert!(!prompt.contains("npx --yes skills add"));
-        assert!(!prompt.contains("Mandatory first step"));
     }
 
     #[test]
@@ -713,6 +720,31 @@ mod tests {
     }
 
     #[test]
+    fn deployment_status_rejects_template_path_on_success() {
+        let thread = json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [
+                    {
+                        "status": "completed",
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\".sealos/template/index.yaml\",\"message\":\"done\",\"error\":null}"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let status = brain_deployment_status_from_thread("thread-1", &thread);
+
+        assert_eq!(status.status, "failed");
+        assert!(status.error.as_deref().unwrap_or("").contains("template"));
+    }
+
+    #[test]
     fn deployment_status_rejects_template_on_failure() {
         let thread = json!({
             "thread": {
@@ -800,6 +832,40 @@ mod tests {
                 .unwrap_or("")
                 .contains("Failed to parse")
         );
+    }
+
+    #[test]
+    fn deployment_status_requires_result_in_final_assistant_message() {
+        let thread = json!({
+            "thread": {
+                "status": { "type": "idle" },
+                "turns": [
+                    {
+                        "status": "completed",
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-old\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\n\",\"message\":\"old\",\"error\":null}"
+                            }
+                        ]
+                    },
+                    {
+                        "status": "completed",
+                        "items": [
+                            {
+                                "type": "agentMessage",
+                                "text": "done without structured result"
+                            }
+                        ]
+                    }
+                ]
+            }
+        });
+
+        let status = brain_deployment_status_from_thread("thread-1", &thread);
+
+        assert_eq!(status.status, "failed");
+        assert!(status.error.as_deref().unwrap_or("").contains("not found"));
     }
 
     #[test]

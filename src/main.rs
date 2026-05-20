@@ -304,8 +304,7 @@ async fn create_brain_deployment(
         ));
     };
 
-    let prompt =
-        build_brain_deployment_prompt(&repository, branch.as_deref(), &github_token, false);
+    let prompt = build_brain_deployment_prompt(&repository, branch.as_deref(), &github_token);
     if let Err(error) = state
         .session_manager
         .send_prompt(&session_id, &prompt)

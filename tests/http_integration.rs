@@ -222,7 +222,6 @@ impl GatewayProcess {
                 .env("CODEX_GATEWAY_CWD", std::env::current_dir().expect("cwd"))
                 .env("CODEX_GATEWAY_CODEX_HOME", &codex_home)
                 .env("CODEX_GATEWAY_MAX_SESSIONS", "4")
-                .env("CODEX_GATEWAY_DEPLOYMENT_TIMEOUT_MS", "1")
                 .env("CODEX_GATEWAY_SESSION_TTL_MS", "60000")
                 .env("CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS", "60000")
                 .env_remove("CODEX_GATEWAY_MODEL")
