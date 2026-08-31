@@ -2,66 +2,21 @@
 
 Chinese version: [README_zh.md](./README_zh.md)
 
-Codex Gateway is a Rust HTTP/SSE gateway for running isolated Codex sessions behind a small API and browser UI.
+HTTP/SSE gateway for Codex. Each session starts one `codex app-server` child process over stdio. The gateway stores that process's events in session state and streams them to the client over SSE. The same process also serves a small browser UI.
 
-Generated Qoder documentation may exist under `.qoder/`; it is generated output and should not be edited by hand or committed as source documentation. This README is the maintained human entry point.
+Sessions are separate processes. They share the gateway working directory. The gateway starts app-server with `sandbox_mode=danger-full-access` and `approval_policy=never`.
 
-## Runtime Shape
+## Run locally
 
-All Gateway sessions use the embedded runtime:
-
-1. A client creates a session through the Rust gateway.
-2. The session owns a `CodexAppServerBridge`.
-3. The bridge starts and manages one `codex app-server` subprocess over stdio.
-4. App-server notifications are folded into session state and streamed to the client over SSE.
-
-Brain deployment tasks use the same embedded runtime, but expose a polling-only task API instead of the interactive session API. Gateway does not create or manage Devbox runtimes for deployment requests.
-
-If deployment work runs in Devbox, an external system is responsible for creating the Devbox and starting this gateway inside it before calling the Brain Deployment API.
-
-## Brain Deployment API
-
-`POST /api/brain/deployments` is a Brain application API. It is not intended to describe a general deployment product surface.
-
-The endpoint creates a local embedded Codex task that installs the deployment skill if needed, builds the repository image, pushes it to GHCR, generates a Sealos template, and reports a machine-readable deployment result containing both the image reference and template content. It does not expose intermediate Codex output or accept follow-up user turns.
-
-## HTTP API
-
-- `GET /healthz`
-- `GET /readyz`
-- `POST /api/sessions`
-- `GET /api/sessions/:id/state`
-- `GET /api/sessions/:id/events`
-- `POST /api/sessions/:id/turn`
-- `POST /api/sessions/:id/turn/interrupt`
-- `POST /api/sessions/:id/thread/new`
-- `POST /api/sessions/:id/thread/resume`
-- `DELETE /api/sessions/:id`
-- `GET /api/threads`
-- `GET /api/threads/:threadId`
-- `POST /api/brain/deployments`
-- `GET /api/brain/deployments/:threadId`
-
-Legacy single-session routes such as `/api/state`, `/api/events`, `/api/turn`, and `/api/thread/new` are removed and return `410 Gone`.
-
-## Local Usage
-
-Start the gateway:
+You need Rust 1.94.1 (`rust-toolchain.toml`) and `codex` on `PATH`.
 
 ```bash
 CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
 CODEX_GATEWAY_OPENAI_BASE_URL=https://example-openai-compatible-endpoint.test \
-CODEX_GATEWAY_JWT_SECRET=replace-with-your-hs256-secret \
 cargo run --bin codex-gateway
 ```
 
-Open:
-
-```text
-http://127.0.0.1:1317
-```
-
-Quick API smoke test:
+Open [http://127.0.0.1:1317](http://127.0.0.1:1317).
 
 ```bash
 curl -X POST http://127.0.0.1:1317/api/sessions \
@@ -69,27 +24,147 @@ curl -X POST http://127.0.0.1:1317/api/sessions \
   -d '{}'
 ```
 
+Auth is off unless you set `CODEX_GATEWAY_JWT_SECRET`. Then every route except `/healthz` and `/readyz` needs `Authorization: Bearer <jwt>`. The JWT must be HS256 and include `exp`. EventSource cannot set headers, so SSE uses `?access_token=<jwt>`.
+
+```bash
+curl -X POST http://127.0.0.1:1317/api/sessions \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer <jwt>' \
+  -d '{}'
+```
+
+## Docker
+
+Images are `linux/amd64` at `ghcr.io/labring/codex-gateway`.
+
+```bash
+docker run --rm -p 1317:1317 \
+  -e CODEX_GATEWAY_OPENAI_API_KEY=sk-... \
+  -e CODEX_GATEWAY_OPENAI_BASE_URL=https://example-openai-compatible-endpoint.test \
+  ghcr.io/labring/codex-gateway:main
+```
+
+The image sets `CODEX_GATEWAY_MAX_SESSIONS=8`. Without that env, the process default is `12`.
+
+## HTTP API
+
+| Method | Path | Purpose |
+| --- | --- | --- |
+| `GET` | `/healthz` | Liveness |
+| `GET` | `/readyz` | Process is up; includes `activeSessions` |
+| `POST` | `/api/sessions` | Create a session |
+| `GET` | `/api/sessions/:id/state` | Session snapshot |
+| `GET` | `/api/sessions/:id/events` | SSE event stream |
+| `POST` | `/api/sessions/:id/turn` | Send a prompt |
+| `POST` | `/api/sessions/:id/turn/interrupt` | Stop the active turn |
+| `POST` | `/api/sessions/:id/thread/new` | Start a new thread |
+| `POST` | `/api/sessions/:id/thread/resume` | Resume a thread |
+| `DELETE` | `/api/sessions/:id` | Close the session |
+| `GET` | `/api/threads` | List threads |
+| `GET` | `/api/threads/:threadId` | Read one thread |
+| `POST` | `/api/brain/deployments` | Start a Brain deployment task |
+| `GET` | `/api/brain/deployments/:threadId` | Poll deployment status |
+
+`/api/state`, `/api/events`, `/api/turn`, and `/api/thread/new` return `410 Gone`.
+
+### Sessions
+
+`POST /api/sessions`
+
+```json
+{
+  "model": "gpt-5",
+  "resumeThreadId": "thread-1"
+}
+```
+
+Both fields are optional. Empty body is valid.
+
+```json
+{
+  "ok": true,
+  "sessionId": "...",
+  "session": {},
+  "state": {}
+}
+```
+
+`POST /api/sessions/:id/turn` body: `{ "prompt": "..." }`.  
+`POST /api/sessions/:id/thread/new` body: `{ "model": "..." }` (`model` optional).  
+`POST /api/sessions/:id/thread/resume` body: `{ "threadId": "..." }`.
+
+`GET /api/threads` query: `cursor`, `limit`, `sortKey`, `archived`, `cwd`, `searchTerm`.
+
+### Brain deployments
+
+This is a Brain app endpoint. It is not a general deploy API.
+
+It starts a Codex task in this gateway process. The task installs the deploy skill if needed, builds the repo image, pushes it to GHCR, and returns the image reference plus Sealos template YAML. There is no event stream and no follow-up user turn. Poll `GET` until `succeeded` or `failed`.
+
+At most 4 deployments can run at once. Each task times out after 1 hour. Those limits are not env settings.
+
+`POST /api/brain/deployments`
+
+```json
+{
+  "githubToken": "ghp_...",
+  "repository": "owner/repo",
+  "branch": "main"
+}
+```
+
+`githubToken` and `repository` are required. `repository` must be `owner/repo`. `branch` is optional.
+
+`202 Accepted`:
+
+```json
+{
+  "threadId": "...",
+  "status": "running"
+}
+```
+
+`GET /api/brain/deployments/:threadId`
+
+```json
+{
+  "threadId": "...",
+  "status": "running",
+  "message": "...",
+  "image": null,
+  "template": null,
+  "error": null
+}
+```
+
+`status` is `running`, `succeeded`, or `failed`. `succeeded` requires a `ghcr.io/...` image and Sealos template content. On `running` or `failed`, `image` and `template` are `null`.
+
+If the work must run inside a Devbox, create the Devbox and start this gateway there first, then call this API.
+
 ## Configuration
 
-Gateway-owned settings use the `CODEX_GATEWAY_` prefix.
+Gateway settings use the `CODEX_GATEWAY_` prefix.
 
-- `CODEX_GATEWAY_HOST`: bind address. Defaults to `0.0.0.0`.
-- `CODEX_GATEWAY_PORT`: bind port. Defaults to `1317`.
-- `CODEX_GATEWAY_CWD`: working directory passed to `thread/start`.
-- `CODEX_GATEWAY_CODEX_BIN`: path to the `codex` executable.
-- `CODEX_GATEWAY_MODEL`: preferred default model.
-- `CODEX_GATEWAY_OPENAI_API_KEY`: API key used at startup for `codex login --with-api-key`.
-- `CODEX_GATEWAY_OPENAI_BASE_URL`: upstream OpenAI-compatible base URL.
-- `CODEX_GATEWAY_JWT_SECRET`: optional HS256 JWT secret.
-- `CODEX_GATEWAY_MAX_SESSIONS`: maximum live sessions. Defaults to `12`.
-- `CODEX_GATEWAY_SESSION_TTL_MS`: idle session TTL. Defaults to `1800000`.
-- `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS`: cleanup sweep interval. Defaults to `60000`.
+| Variable | Meaning | Default |
+| --- | --- | --- |
+| `CODEX_GATEWAY_HOST` | Bind address | `0.0.0.0` |
+| `CODEX_GATEWAY_PORT` | Bind port | `1317` |
+| `CODEX_GATEWAY_CWD` | Working directory for `thread/start` | process cwd |
+| `CODEX_GATEWAY_CODEX_BIN` | `codex` executable | `codex` |
+| `CODEX_GATEWAY_CODEX_HOME` | Passed to the child as `CODEX_HOME` | unset |
+| `CODEX_GATEWAY_MODEL` | Default model | unset |
+| `CODEX_GATEWAY_DEBUG` | Set to `1` to log raw app-server lines | off |
+| `CODEX_GATEWAY_OPENAI_API_KEY` | Used at startup for `codex login --with-api-key` | unset |
+| `CODEX_GATEWAY_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL | unset |
+| `CODEX_GATEWAY_JWT_SECRET` | HS256 secret; unset means no auth | unset |
+| `CODEX_GATEWAY_MAX_SESSIONS` | Max live sessions | `12` |
+| `CODEX_GATEWAY_SESSION_TTL_MS` | Idle session TTL | `1800000` |
+| `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS` | Session cleanup interval | `60000` |
 
-Devbox lifecycle is external to this gateway. If the gateway is running in Devbox, configure the process with the normal gateway settings above.
-
-## Verification
+## Checks
 
 ```bash
 cargo fmt --check
-cargo test
+cargo clippy --locked --all-targets -- -D warnings
+cargo test --locked
 ```
