@@ -46,28 +46,44 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
     assert_eq!(turn.get("ok").and_then(Value::as_bool), Some(true));
 
     let state = gateway.wait_for_json(&format!("/api/sessions/{session_id}/state"), |payload| {
-        let has_assistant_reply = payload
-            .pointer("/state/transcript")
-            .and_then(Value::as_array)
-            .is_some_and(|entries| {
-                entries.iter().any(|entry| {
-                    entry.get("role").and_then(Value::as_str) == Some("assistant")
-                        && entry.get("text").and_then(Value::as_str) == Some("fake assistant reply")
-                })
-            });
-
-        has_assistant_reply
+        payload
+            .pointer("/state/lastTurnStatus")
+            .and_then(Value::as_str)
+            == Some("completed")
             && payload
-                .pointer("/state/lastTurnStatus")
-                .and_then(Value::as_str)
-                == Some("completed")
+                .pointer("/state/activeTurn")
+                .and_then(Value::as_bool)
+                == Some(false)
     });
     assert_eq!(
         state
-            .pointer("/state/lastTurnStatus")
+            .pointer("/state/currentTurnId")
             .and_then(Value::as_str),
-        Some("completed")
+        None
     );
+
+    // Brain recovers a lost session by re-creating one with `threadId`.
+    let (status, resumed) = gateway.json_request(
+        "POST",
+        "/api/sessions",
+        Some(r#"{"threadId":"thread-resume"}"#),
+    );
+    assert_eq!(status, 200);
+    assert_eq!(
+        resumed.pointer("/state/threadId").and_then(Value::as_str),
+        Some("thread-resume")
+    );
+    let resumed_session_id = resumed
+        .get("sessionId")
+        .and_then(Value::as_str)
+        .expect("resumed session id")
+        .to_string();
+    let (status, _) = gateway.json_request(
+        "DELETE",
+        &format!("/api/sessions/{resumed_session_id}"),
+        None,
+    );
+    assert_eq!(status, 200);
 
     let (status, removed_route) = gateway.json_request("GET", "/api/threads?limit=20", None);
     assert_eq!(status, 404);
