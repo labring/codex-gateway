@@ -69,117 +69,11 @@ fn gateway_session_thread_and_turn_http_flow_against_fake_app_server() {
         Some("completed")
     );
 
-    let (status, threads) = gateway.json_request("GET", "/api/threads?limit=20", None);
-    assert_eq!(status, 200);
-    assert_eq!(
-        threads.pointer("/threads/0/id").and_then(Value::as_str),
-        Some("thread-resume")
-    );
-
-    let (status, thread) = gateway.json_request("GET", "/api/threads/thread-resume", None);
-    assert_eq!(status, 200);
-    assert_eq!(
-        thread.pointer("/thread/id").and_then(Value::as_str),
-        Some("thread-resume")
-    );
-
-    let (status, bad_deployment) = gateway.json_request(
-        "POST",
-        "/api/brain/deployments",
-        Some(r#"{"githubToken":"ghp_fake","repository":"missing-owner"}"#),
-    );
-    assert_eq!(status, 400);
-    assert!(
-        bad_deployment
-            .get("error")
-            .and_then(Value::as_str)
-            .is_some_and(|message| message.contains("owner/repo"))
-    );
-
-    let (status, bad_branch) = gateway.json_request(
-        "POST",
-        "/api/brain/deployments",
-        Some(r#"{"githubToken":"ghp_fake","repository":"owner/repo","branch":"main`bad"}"#),
-    );
-    assert_eq!(status, 400);
-    assert!(
-        bad_branch
-            .get("error")
-            .and_then(Value::as_str)
-            .is_some_and(|message| message.contains("branch"))
-    );
-
-    let (status, old_deployment_route) = gateway.json_request(
-        "POST",
-        "/api/deployments",
-        Some(r#"{"githubToken":"ghp_fake","repository":"owner/repo"}"#),
-    );
+    let (status, removed_route) = gateway.json_request("GET", "/api/threads?limit=20", None);
     assert_eq!(status, 404);
     assert_eq!(
-        old_deployment_route.get("error").and_then(Value::as_str),
+        removed_route.get("error").and_then(Value::as_str),
         Some("Not found")
-    );
-
-    let (status, missing_deployment) =
-        gateway.json_request("GET", "/api/brain/deployments/thread-resume", None);
-    assert_eq!(status, 404);
-    assert!(
-        missing_deployment
-            .get("error")
-            .and_then(Value::as_str)
-            .is_some_and(|message| message.contains("Unknown deployment thread"))
-    );
-
-    let (status, deployment) = gateway.json_request(
-        "POST",
-        "/api/brain/deployments",
-        Some(r#"{"githubToken":"ghp_fake","repository":"owner/repo","branch":"main"}"#),
-    );
-    assert_eq!(status, 202);
-    assert_eq!(
-        deployment.get("status").and_then(Value::as_str),
-        Some("running")
-    );
-    let deployment_thread_id = deployment
-        .get("threadId")
-        .and_then(Value::as_str)
-        .expect("deployment thread id")
-        .to_string();
-    assert_eq!(deployment_thread_id, "thread-1");
-
-    let deployment_status = gateway.wait_for_json(
-        &format!("/api/brain/deployments/{deployment_thread_id}"),
-        |payload| payload.get("status").and_then(Value::as_str) == Some("succeeded"),
-    );
-    assert_eq!(
-        deployment_status.get("image").and_then(Value::as_str),
-        Some("ghcr.io/owner/repo:sha-abcdef0")
-    );
-    assert_eq!(
-        deployment_status.get("template").and_then(Value::as_str),
-        Some("apiVersion: app.sealos.io/v1\nkind: Template\nmetadata:\n  name: owner-repo\n")
-    );
-
-    let (status, resumed) = gateway.json_request(
-        "POST",
-        &format!("/api/sessions/{session_id}/thread/resume"),
-        Some(r#"{"threadId":"thread-resume"}"#),
-    );
-    assert_eq!(status, 200);
-    assert_eq!(
-        resumed.pointer("/state/threadId").and_then(Value::as_str),
-        Some("thread-resume")
-    );
-    assert!(
-        resumed
-            .pointer("/state/transcript")
-            .and_then(Value::as_array)
-            .expect("resumed transcript")
-            .iter()
-            .any(|entry| {
-                entry.get("role").and_then(Value::as_str) == Some("assistant")
-                    && entry.get("text").and_then(Value::as_str) == Some("resumed assistant")
-            })
     );
 
     let (status, deleted) =

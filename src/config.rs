@@ -24,7 +24,6 @@ pub struct AppConfig {
     pub host: String,
     pub port: u16,
     pub bridge_cwd: PathBuf,
-    pub public_dir: PathBuf,
     pub codex_bin: String,
     pub debug: bool,
     pub default_model: Option<String>,
@@ -37,15 +36,12 @@ pub struct AppConfig {
 
 impl AppConfig {
     pub fn from_env(root_dir: PathBuf) -> std::io::Result<Self> {
-        let public_dir = root_dir.join("public");
-
         Ok(Self {
             host: read_env(HOST_ENV).unwrap_or_else(|| "0.0.0.0".to_string()),
             port: read_u16(PORT_ENV).unwrap_or(1317),
             bridge_cwd: read_env(BRIDGE_CWD_ENV)
                 .map(PathBuf::from)
                 .unwrap_or_else(|| root_dir.clone()),
-            public_dir,
             codex_bin: read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string()),
             debug: read_bool_flag(DEBUG_ENV),
             default_model: read_env(DEFAULT_MODEL_ENV),

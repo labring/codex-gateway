@@ -3,7 +3,6 @@ use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use chrono::{DateTime, Utc};
-use serde_json::Value;
 use tokio::sync::Mutex;
 use tokio::sync::broadcast::Receiver;
 use tracing::{error, info, warn};
@@ -119,101 +118,6 @@ impl SessionManager {
         Ok((id, info, state))
     }
 
-    pub async fn list_threads(&self, params: Value) -> Result<Value, AppError> {
-        if let Some(session) = self.first_session() {
-            session.metadata.touch(self.inner.config.session_ttl);
-            info!(session_id = %session.id, "listing threads with active session backend");
-            return session.list_threads(params).await;
-        }
-
-        info!("listing threads with transient bridge");
-        let bridge = self.new_transient_bridge();
-        bridge.start_without_thread().await?;
-        let result = bridge.list_threads(params).await;
-        let stop_result = bridge.stop().await;
-        if let Err(error) = stop_result {
-            error!("failed to stop transient app-server bridge: {error}");
-        }
-        result
-    }
-
-    pub async fn read_thread(&self, thread_id: &str) -> Result<Value, AppError> {
-        if let Some(session) = self.first_session() {
-            session.metadata.touch(self.inner.config.session_ttl);
-            info!(
-                session_id = %session.id,
-                thread_id = %thread_id,
-                "reading thread with active session backend"
-            );
-            return session.read_thread(thread_id).await;
-        }
-
-        info!(thread_id = %thread_id, "reading thread with transient bridge");
-        let bridge = self.new_transient_bridge();
-        bridge.start_without_thread().await?;
-        let result = bridge.read_thread(thread_id).await;
-        let stop_result = bridge.stop().await;
-        if let Err(error) = stop_result {
-            error!("failed to stop transient app-server bridge: {error}");
-        }
-        result
-    }
-
-    pub async fn read_thread_with_session(
-        &self,
-        session_id: &str,
-        thread_id: &str,
-    ) -> Result<Value, AppError> {
-        let session = self.require_session(session_id)?;
-        info!(
-            session_id = %session.id,
-            thread_id = %thread_id,
-            "reading thread with deployment session backend"
-        );
-        session.read_thread(thread_id).await
-    }
-
-    pub async fn create_brain_deployment_session(
-        &self,
-    ) -> Result<(String, SessionInfo, BridgeStateSnapshot), AppError> {
-        let _guard = self.inner.create_lock.lock().await;
-        self.sweep_expired_sessions().await;
-
-        if self.count() >= self.inner.config.max_sessions {
-            warn!(
-                active_sessions = self.count(),
-                max_sessions = self.inner.config.max_sessions,
-                "maximum concurrent sessions reached"
-            );
-            return Err(AppError::service_unavailable(format!(
-                "Maximum concurrent sessions reached ({})",
-                self.inner.config.max_sessions
-            )));
-        }
-
-        let id = Uuid::new_v4().to_string();
-        info!(session_id = %id, "allocating Brain deployment session");
-        let metadata = Arc::new(SessionMetadata::new(self.inner.config.session_ttl));
-        let backend = self.create_embedded_backend(None, None, &metadata).await?;
-
-        let session = Arc::new(Session {
-            id: id.clone(),
-            backend,
-            metadata,
-        });
-        let info = session.info();
-        let state = session.state();
-
-        self.inner
-            .sessions
-            .write()
-            .unwrap()
-            .insert(id.clone(), session);
-        info!("Brain deployment session created {}", id);
-
-        Ok((id, info, state))
-    }
-
     pub fn get_state(&self, session_id: &str) -> Result<BridgeStateSnapshot, AppError> {
         let session = self.require_session(session_id)?;
         Ok(session.state())
@@ -222,12 +126,6 @@ impl SessionManager {
     pub fn get_session_info(&self, session_id: &str) -> Result<SessionInfo, AppError> {
         let session = self.require_session(session_id)?;
         Ok(session.info())
-    }
-
-    pub fn touch_session_for(&self, session_id: &str, ttl: Duration) -> Result<(), AppError> {
-        let session = self.require_session(session_id)?;
-        session.metadata.touch(ttl);
-        Ok(())
     }
 
     pub fn subscribe(
@@ -260,34 +158,6 @@ impl SessionManager {
         let session = self.require_session(session_id)?;
         info!(session_id = %session_id, "forwarding interrupt to bridge");
         session.interrupt_turn().await
-    }
-
-    pub async fn start_new_thread(
-        &self,
-        session_id: &str,
-        model: Option<String>,
-    ) -> Result<BridgeStateSnapshot, AppError> {
-        let session = self.require_session(session_id)?;
-        info!(
-            session_id = %session_id,
-            model = model.as_deref().unwrap_or("-"),
-            "forwarding new thread request to bridge"
-        );
-        session.start_new_thread(model).await
-    }
-
-    pub async fn resume_thread(
-        &self,
-        session_id: &str,
-        thread_id: &str,
-    ) -> Result<BridgeStateSnapshot, AppError> {
-        let session = self.require_session(session_id)?;
-        info!(
-            session_id = %session_id,
-            thread_id = %thread_id,
-            "forwarding thread resume request to bridge"
-        );
-        session.resume_thread(thread_id).await
     }
 
     pub async fn close_session(&self, session_id: &str, reason: &str) -> Result<bool, AppError> {
@@ -384,21 +254,6 @@ impl SessionManager {
         Ok(session)
     }
 
-    fn first_session(&self) -> Option<Arc<Session>> {
-        self.inner.sessions.read().unwrap().values().next().cloned()
-    }
-
-    fn new_transient_bridge(&self) -> CodexAppServerBridge {
-        CodexAppServerBridge::new(BridgeOptions {
-            cwd: self.inner.config.bridge_cwd.clone(),
-            codex_bin: self.inner.config.codex_bin.clone(),
-            debug: self.inner.config.debug,
-            client_info: self.inner.config.client_info.clone(),
-            default_model: self.inner.config.default_model.clone(),
-            activity_touch: Arc::new(|| {}),
-        })
-    }
-
     fn spawn_sweeper(&self) {
         let manager = self.clone();
         tokio::spawn(async move {
@@ -431,18 +286,6 @@ impl Session {
         }
     }
 
-    async fn list_threads(&self, params: Value) -> Result<Value, AppError> {
-        match &self.backend {
-            SessionBackend::Embedded { bridge } => bridge.list_threads(params).await,
-        }
-    }
-
-    async fn read_thread(&self, thread_id: &str) -> Result<Value, AppError> {
-        match &self.backend {
-            SessionBackend::Embedded { bridge } => bridge.read_thread(thread_id).await,
-        }
-    }
-
     async fn send_prompt(&self, prompt: &str) -> Result<BridgeStateSnapshot, AppError> {
         match &self.backend {
             SessionBackend::Embedded { bridge } => {
@@ -456,27 +299,6 @@ impl Session {
         match &self.backend {
             SessionBackend::Embedded { bridge } => {
                 bridge.interrupt_turn().await?;
-                Ok(bridge.get_state())
-            }
-        }
-    }
-
-    async fn start_new_thread(
-        &self,
-        model: Option<String>,
-    ) -> Result<BridgeStateSnapshot, AppError> {
-        match &self.backend {
-            SessionBackend::Embedded { bridge } => {
-                bridge.start_new_thread(model).await?;
-                Ok(bridge.get_state())
-            }
-        }
-    }
-
-    async fn resume_thread(&self, thread_id: &str) -> Result<BridgeStateSnapshot, AppError> {
-        match &self.backend {
-            SessionBackend::Embedded { bridge } => {
-                bridge.resume_thread(thread_id).await?;
                 Ok(bridge.get_state())
             }
         }
