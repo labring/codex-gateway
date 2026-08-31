@@ -2,9 +2,9 @@
 
 Chinese version: [README_zh.md](./README_zh.md)
 
-HTTP/SSE gateway for Codex. Each session starts one `codex app-server` child process over stdio. The gateway stores that process's events in session state and streams them to the client over SSE. The same process also serves a small browser UI.
+HTTP/SSE gateway for Codex. Each session starts one `codex app-server` child process over stdio; the gateway runs turns against it, streams its events to the client over SSE, and optionally records every user/agent interaction to [Langfuse](https://langfuse.com/).
 
-Sessions are separate processes. They share the gateway working directory. The gateway starts app-server with `sandbox_mode=danger-full-access` and `approval_policy=never`.
+Sessions are separate processes that share the gateway working directory. The gateway starts app-server with `sandbox_mode=danger-full-access` and `approval_policy=never`, and answers approval requests automatically: it is built to run inside a disposable sandbox (a Sealos Devbox).
 
 ## Run locally
 
@@ -16,22 +16,15 @@ CODEX_GATEWAY_OPENAI_BASE_URL=https://example-openai-compatible-endpoint.test \
 cargo run --bin codex-gateway
 ```
 
-Open [http://127.0.0.1:1317](http://127.0.0.1:1317).
-
 ```bash
 curl -X POST http://127.0.0.1:1317/api/sessions \
   -H 'Content-Type: application/json' \
   -d '{}'
 ```
 
-Auth is off unless you set `CODEX_GATEWAY_JWT_SECRET`. Then every route except `/healthz` and `/readyz` needs `Authorization: Bearer <jwt>`. The JWT must be HS256 and include `exp`. EventSource cannot set headers, so SSE uses `?access_token=<jwt>`.
+Auth is off unless you set `CODEX_GATEWAY_JWT_SECRET`. Then every route except `/healthz` and `/readyz` needs `Authorization: Bearer <jwt>`. The JWT must be HS256 and include `exp`. EventSource cannot set headers, so SSE accepts `?access_token=<jwt>`.
 
-```bash
-curl -X POST http://127.0.0.1:1317/api/sessions \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer <jwt>' \
-  -d '{}'
-```
+`codex-gateway-cli` is a smoke tool: it runs one prompt against a fresh app-server and prints the final agent text.
 
 ## Docker
 
@@ -57,15 +50,7 @@ The image sets `CODEX_GATEWAY_MAX_SESSIONS=8`. Without that env, the process def
 | `GET` | `/api/sessions/:id/events` | SSE event stream |
 | `POST` | `/api/sessions/:id/turn` | Send a prompt |
 | `POST` | `/api/sessions/:id/turn/interrupt` | Stop the active turn |
-| `POST` | `/api/sessions/:id/thread/new` | Start a new thread |
-| `POST` | `/api/sessions/:id/thread/resume` | Resume a thread |
 | `DELETE` | `/api/sessions/:id` | Close the session |
-| `GET` | `/api/threads` | List threads |
-| `GET` | `/api/threads/:threadId` | Read one thread |
-| `POST` | `/api/brain/deployments` | Start a Brain deployment task |
-| `GET` | `/api/brain/deployments/:threadId` | Poll deployment status |
-
-`/api/state`, `/api/events`, `/api/turn`, and `/api/thread/new` return `410 Gone`.
 
 ### Sessions
 
@@ -78,7 +63,7 @@ The image sets `CODEX_GATEWAY_MAX_SESSIONS=8`. Without that env, the process def
 }
 ```
 
-Both fields are optional. Empty body is valid.
+Both fields are optional; an empty body starts a new thread with the default model. `threadId` is accepted as an alias for `resumeThreadId`.
 
 ```json
 {
@@ -89,61 +74,23 @@ Both fields are optional. Empty body is valid.
 }
 ```
 
-`POST /api/sessions/:id/turn` body: `{ "prompt": "..." }`.  
-`POST /api/sessions/:id/thread/new` body: `{ "model": "..." }` (`model` optional).  
-`POST /api/sessions/:id/thread/resume` body: `{ "threadId": "..." }`.
+`state` is `{ ready, cwd, startedAt, selectedModel, threadId, currentTurnId, activeTurn, lastTurnStatus }`. Thread history is not mirrored by the gateway; read it from Codex or from Langfuse.
 
-`GET /api/threads` query: `cursor`, `limit`, `sortKey`, `archived`, `cwd`, `searchTerm`.
+`POST /api/sessions/:id/turn` body: `{ "prompt": "..." }`. Returns `409` while a turn is active.
 
-### Brain deployments
+### SSE events
 
-This is a Brain app endpoint. It is not a general deploy API.
+`GET /api/sessions/:id/events` emits `session` and `state` on connect, then `state`, `notification` (raw app-server JSON-RPC notifications), `server-request`, `warning`, `session-closed`, and — with `CODEX_GATEWAY_DEBUG=1` — `raw` events.
 
-It starts a Codex task in this gateway process. The task installs the deploy skill if needed, builds the repo image, pushes it to GHCR, and returns the image reference plus Sealos template YAML. There is no event stream and no follow-up user turn. Poll `GET` until `succeeded` or `failed`.
+## Langfuse tracing
 
-At most 4 deployments can run at once. Each task times out after 1 hour. Those limits are not env settings.
+Set `LANGFUSE_PUBLIC_KEY` and `LANGFUSE_SECRET_KEY` to record every user/agent interaction. Spans are sent over OTLP (HTTP/protobuf) to `{LANGFUSE_HOST}/api/public/otel/v1/traces`, batched on a background thread; a Langfuse outage can only drop telemetry, never block requests.
 
-`POST /api/brain/deployments`
+Each turn becomes one trace: the root span carries the prompt as input, the final agent message as output, and token usage. Completed codex items become child observations (command executions with their output, file changes, MCP tool calls, agent messages as generations). App-server errors, gateway warnings, and auto-answered approval requests become events. Known credential shapes (GitHub tokens, API keys, bearer tokens) are redacted before export, and payloads are capped at 8 KiB.
 
-```json
-{
-  "githubToken": "ghp_...",
-  "repository": "owner/repo",
-  "branch": "main"
-}
-```
-
-`githubToken` and `repository` are required. `repository` must be `owner/repo`. `branch` is optional.
-
-`202 Accepted`:
-
-```json
-{
-  "threadId": "...",
-  "status": "running"
-}
-```
-
-`GET /api/brain/deployments/:threadId`
-
-```json
-{
-  "threadId": "...",
-  "status": "running",
-  "message": "...",
-  "image": null,
-  "template": null,
-  "error": null
-}
-```
-
-`status` is `running`, `succeeded`, or `failed`. `succeeded` requires a `ghcr.io/...` image and Sealos template content. On `running` or `failed`, `image` and `template` are `null`.
-
-If the work must run inside a Devbox, create the Devbox and start this gateway there first, then call this API.
+Trace identity comes from the environment Brain injects when it creates the Devbox: `langfuse.user.id` = `SEALAI_NAMESPACE`, `langfuse.session.id` = `SEALAI_DEPLOY_TASK_ID` (falling back to the codex thread id), and `SEALAI_PROJECT_ID` lands in trace metadata — so a failing deploy task can be looked up in Langfuse by its task id.
 
 ## Configuration
-
-Gateway settings use the `CODEX_GATEWAY_` prefix.
 
 | Variable | Meaning | Default |
 | --- | --- | --- |
@@ -153,13 +100,19 @@ Gateway settings use the `CODEX_GATEWAY_` prefix.
 | `CODEX_GATEWAY_CODEX_BIN` | `codex` executable | `codex` |
 | `CODEX_GATEWAY_CODEX_HOME` | Passed to the child as `CODEX_HOME` | unset |
 | `CODEX_GATEWAY_MODEL` | Default model | unset |
-| `CODEX_GATEWAY_DEBUG` | Set to `1` to log raw app-server lines | off |
+| `CODEX_GATEWAY_DEBUG` | Set to `1` to log and stream raw app-server lines | off |
 | `CODEX_GATEWAY_OPENAI_API_KEY` | Used at startup for `codex login --with-api-key` | unset |
 | `CODEX_GATEWAY_OPENAI_BASE_URL` | Upstream OpenAI-compatible base URL | unset |
 | `CODEX_GATEWAY_JWT_SECRET` | HS256 secret; unset means no auth | unset |
 | `CODEX_GATEWAY_MAX_SESSIONS` | Max live sessions | `12` |
 | `CODEX_GATEWAY_SESSION_TTL_MS` | Idle session TTL | `1800000` |
 | `CODEX_GATEWAY_SESSION_SWEEP_INTERVAL_MS` | Session cleanup interval | `60000` |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse project public key; tracing is off without it | unset |
+| `LANGFUSE_SECRET_KEY` | Langfuse project secret key | unset |
+| `LANGFUSE_HOST` | Langfuse base URL | `https://cloud.langfuse.com` |
+| `SEALAI_NAMESPACE` | Langfuse `user.id` | unset |
+| `SEALAI_DEPLOY_TASK_ID` | Langfuse `session.id` | codex thread id |
+| `SEALAI_PROJECT_ID` | Trace metadata `projectId` | unset |
 
 ## Checks
 
@@ -168,3 +121,5 @@ cargo fmt --check
 cargo clippy --locked --all-targets -- -D warnings
 cargo test --locked
 ```
+
+Integration tests run the real gateway binary against a fake `codex app-server` and a fake Langfuse OTLP endpoint.
