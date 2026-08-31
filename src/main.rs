@@ -1,7 +1,7 @@
 use std::env;
 
 use tokio::net::TcpListener;
-use tracing::info;
+use tracing::{error, info};
 
 use codex_gateway::codex::login_with_api_key;
 use codex_gateway::config::AppConfig;
@@ -25,11 +25,14 @@ async fn main() -> Result<(), AppError> {
         max_sessions = config.max_sessions,
         session_ttl_ms = config.session_ttl.as_millis() as u64,
         session_sweep_interval_ms = config.session_sweep_interval.as_millis() as u64,
+        langfuse_enabled = config.langfuse.is_some(),
         "gateway configuration loaded"
     );
     login_with_api_key(&config)?;
 
-    let session_manager = SessionManager::new(config.clone(), None);
+    let langfuse = telemetry::init_langfuse(&config)?;
+    let session_hook = langfuse.as_ref().map(|handle| handle.session_hook());
+    let session_manager = SessionManager::new(config.clone(), session_hook);
     let state = AppState {
         session_manager: session_manager.clone(),
     };
@@ -47,6 +50,11 @@ async fn main() -> Result<(), AppError> {
         .with_graceful_shutdown(async move {
             shutdown_signal().await;
             session_manager.shutdown().await;
+            if let Some(handle) = langfuse
+                && let Err(error) = handle.shutdown()
+            {
+                error!("failed to flush langfuse traces: {error}");
+            }
         })
         .await
         .map_err(AppError::from)
