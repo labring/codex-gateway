@@ -8,14 +8,17 @@ use thiserror::Error;
 pub enum AppError {
     #[error("{message}")]
     Http { status: StatusCode, message: String },
-    #[error("{0}")]
-    Message(String),
+    /// A JSON-RPC error returned by `codex app-server`.
+    #[error("{method} failed: {message} (code={code})")]
+    Rpc {
+        method: String,
+        code: i64,
+        message: String,
+    },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]
     Json(#[from] serde_json::Error),
-    #[error(transparent)]
-    Runtime(#[from] crate::runtime::RuntimeError),
     #[error("Background task channel closed")]
     ChannelClosed,
 }
@@ -38,13 +41,6 @@ impl AppError {
     pub fn conflict(message: impl Into<String>) -> Self {
         Self::Http {
             status: StatusCode::CONFLICT,
-            message: message.into(),
-        }
-    }
-
-    pub fn gone(message: impl Into<String>) -> Self {
-        Self::Http {
-            status: StatusCode::GONE,
             message: message.into(),
         }
     }

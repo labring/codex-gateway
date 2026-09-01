@@ -30,7 +30,6 @@ RUN apt-get update \
     && codex --version \
     && apt-get clean
 
-COPY public ./public
 COPY --from=builder /build/target/release/codex-gateway /usr/local/bin/codex-gateway
 COPY --from=builder /build/target/release/codex-gateway-cli /usr/local/bin/codex-gateway-cli
 

@@ -1,6 +1,6 @@
 [package]
 name = "codex-gateway"
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 
 [dependencies]
@@ -11,11 +11,15 @@ futures-util = "0.3"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thiserror = "2"
-tokio = { version = "1", default-features = false, features = ["fs", "macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
+tokio = { version = "1", default-features = false, features = ["io-util", "macros", "net", "process", "rt-multi-thread", "signal", "sync", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1", features = ["serde", "v4"] }
 jsonwebtoken = { version = "9", default-features = false }
+base64 = "0.23.1"
+opentelemetry = { version = "0.32.0", default-features = false, features = ["trace"] }
+opentelemetry_sdk = { version = "0.32.1", default-features = false, features = ["trace"] }
+opentelemetry-otlp = { version = "0.32.0", default-features = false, features = ["http-proto", "reqwest-blocking-client", "reqwest-rustls"] }
 
 [profile.release]
 opt-level = "z"

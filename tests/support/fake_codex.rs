@@ -4,9 +4,9 @@ use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const FAKE_CODEX_SOURCE: &str = r##"
-	use std::io::{self, BufRead, Write};
-	
-	const TURN_NOTIFICATIONS_BEFORE_RESPONSE: bool = false;
+use std::io::{self, BufRead, Write};
+
+const TURN_NOTIFICATIONS_BEFORE_RESPONSE: bool = false;
 
 fn main() {
     let args = std::env::args().collect::<Vec<_>>();
@@ -31,19 +31,19 @@ fn main() {
                 r#"{{"id":{},"result":{{"platformFamily":"unix","platformOs":"fake-os","userAgent":"fake-codex/1.0"}}}}"#,
                 id
             ));
-        } else if line.contains("\"method\":\"account/read\"") {
-            send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"account":{{"type":"chatgpt","email":"fake@example.com"}},"requiresOpenaiAuth":false}}}}"#,
-                id
-            ));
         } else if line.contains("\"method\":\"model/list\"") {
             send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"data":[{{"model":"fake-model","displayName":"Fake Model","isDefault":true,"hidden":false,"supportsPersonality":false,"inputModalities":["text"]}}]}}}}"#,
+                r#"{{"id":{},"result":{{"data":[{{"model":"fake-model","displayName":"Fake Model","isDefault":true,"hidden":false}}]}}}}"#,
                 id
             ));
         } else if line.contains("\"method\":\"thread/start\"") {
             send(&mut stdout, &format!(
                 r#"{{"id":{},"result":{{"thread":{{"id":"thread-1"}}}}}}"#,
+                id
+            ));
+        } else if line.contains("\"method\":\"thread/resume\"") {
+            send(&mut stdout, &format!(
+                r#"{{"id":{},"result":{{"thread":{{"id":"thread-resume","status":{{"type":"idle"}}}},"model":"fake-model"}}}}"#,
                 id
             ));
         } else if line.contains("\"method\":\"turn/start\"") {
@@ -54,35 +54,13 @@ fn main() {
                 std::process::exit(3);
             }
 
-	            if TURN_NOTIFICATIONS_BEFORE_RESPONSE {
-	                send_turn_notifications(&mut stdout);
-	                send_turn_start_response(&mut stdout, id);
-	            } else {
-	                send_turn_start_response(&mut stdout, id);
-	                send_turn_notifications(&mut stdout);
-	            }
-        } else if line.contains("\"method\":\"thread/read\"") {
-            let thread = if line.contains("\"threadId\":\"thread-1\"") {
-                deployment_thread_json()
+            if TURN_NOTIFICATIONS_BEFORE_RESPONSE {
+                send_turn_notifications(&mut stdout);
+                send_turn_start_response(&mut stdout, id);
             } else {
-                resumed_thread_json()
-            };
-            send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"thread":{}}}}}"#,
-                id,
-                thread
-            ));
-        } else if line.contains("\"method\":\"thread/resume\"") {
-            send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"thread":{},"model":"fake-model"}}}}"#,
-                id,
-                resumed_thread_json()
-            ));
-        } else if line.contains("\"method\":\"thread/list\"") {
-            send(&mut stdout, &format!(
-                r#"{{"id":{},"result":{{"data":[{{"id":"thread-resume","name":"Resume fixture","updatedAt":1700000001}}],"nextCursor":null}}}}"#,
-                id
-            ));
+                send_turn_start_response(&mut stdout, id);
+                send_turn_notifications(&mut stdout);
+            }
         } else {
             send(&mut stdout, &format!(
                 r#"{{"id":{},"error":{{"code":-32601,"message":"unsupported fake method"}}}}"#,
@@ -102,35 +80,28 @@ fn request_id(line: &str) -> Option<u64> {
     digits.parse().ok()
 }
 
-fn resumed_thread_json() -> &'static str {
-    r#"{"id":"thread-resume","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"resume-user","type":"userMessage","content":[{"type":"text","text":"resumed user"}]},{"id":"resume-assistant","type":"agentMessage","text":"resumed assistant"}]}]}"#
+fn send(stdout: &mut io::Stdout, message: &str) {
+    writeln!(stdout, "{message}").expect("write fake response");
+    stdout.flush().expect("flush fake response");
 }
 
-fn deployment_thread_json() -> &'static str {
-    r#"{"id":"thread-1","status":{"type":"idle"},"createdAt":1700000000,"turns":[{"status":"completed","items":[{"id":"deploy-user","type":"userMessage","content":[{"type":"text","text":"deploy user marker DEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/wrong/image:tag\",\"template\":\"wrong\",\"message\":\"wrong\",\"error\":null}"}]},{"id":"deploy-assistant","type":"agentMessage","text":"Deployment image pushed to GHCR\nDEPLOYMENT_RESULT: {\"status\":\"succeeded\",\"image\":\"ghcr.io/owner/repo:sha-abcdef0\",\"template\":\"apiVersion: app.sealos.io/v1\\nkind: Template\\nmetadata:\\n  name: owner-repo\\n\",\"message\":\"Deployment image pushed to GHCR\",\"error\":null}"}]}]}"#
+fn send_turn_start_response(stdout: &mut io::Stdout, id: u64) {
+    send(stdout, &format!(
+        r#"{{"id":{},"result":{{"turn":{{"id":"turn-1","status":"inProgress"}}}}}}"#,
+        id
+    ));
 }
 
-	fn send(stdout: &mut io::Stdout, message: &str) {
-	    writeln!(stdout, "{message}").expect("write fake response");
-	    stdout.flush().expect("flush fake response");
-	}
-	
-	fn send_turn_start_response(stdout: &mut io::Stdout, id: u64) {
-	    send(stdout, &format!(
-	        r#"{{"id":{},"result":{{"turn":{{"id":"turn-1","status":"inProgress"}}}}}}"#,
-	        id
-	    ));
-	}
-	
-	fn send_turn_notifications(stdout: &mut io::Stdout) {
-	    send(stdout, r#"{"method":"turn/started","params":{"turn":{"id":"turn-1","status":"inProgress"}}}"#);
-	    send(stdout, r#"{"method":"item/started","params":{"item":{"id":"assistant-1","type":"agentMessage","text":""}}}"#);
-	    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"fake "}}"#);
-	    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"assistant reply"}}"#);
-	    send(stdout, r#"{"method":"item/completed","params":{"item":{"id":"assistant-1","type":"agentMessage","status":"completed","text":"fake assistant reply"}}}"#);
-	    send(stdout, r#"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#);
-	}
-	"##;
+fn send_turn_notifications(stdout: &mut io::Stdout) {
+    send(stdout, r#"{"method":"turn/started","params":{"turn":{"id":"turn-1","status":"inProgress"}}}"#);
+    send(stdout, r#"{"method":"item/started","params":{"item":{"id":"assistant-1","type":"agentMessage","text":""}}}"#);
+    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"fake "}}"#);
+    send(stdout, r#"{"method":"item/agentMessage/delta","params":{"itemId":"assistant-1","delta":"assistant reply"}}"#);
+    send(stdout, r#"{"method":"item/completed","params":{"item":{"id":"assistant-1","type":"agentMessage","status":"completed","text":"fake assistant reply"}}}"#);
+    send(stdout, r#"{"method":"thread/tokenUsage/updated","params":{"threadId":"thread-1","tokenUsage":{"inputTokens":10,"outputTokens":5,"totalTokens":15}}}"#);
+    send(stdout, r#"{"method":"turn/completed","params":{"turn":{"id":"turn-1","status":"completed"}}}"#);
+}
+"##;
 
 pub struct FakeCodex {
     binary: PathBuf,

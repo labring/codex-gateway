@@ -1,14 +1,15 @@
+//! Smoke-test CLI: starts one codex app-server, runs a single prompt, and
+//! prints the final agent text. Useful to verify auth and model wiring
+//! inside a Devbox without going through HTTP.
+
 use std::env;
 use std::time::Duration;
 
-use codex_gateway::bridge::{BridgeOptions, CodexAppServerBridge};
-use codex_gateway::config::ClientInfo;
-use codex_gateway::env_config::{
-    CODEX_BIN_ENV, DEBUG_ENV, DEFAULT_MODEL_ENV, read_bool_flag, read_env,
-};
+use serde_json::{Value, json};
+
+use codex_gateway::codex::{CodexClient, CodexEvent, SpawnOptions, login_with_api_key};
+use codex_gateway::config::AppConfig;
 use codex_gateway::error::AppError;
-use codex_gateway::models::BridgeEvent;
-use codex_gateway::runtime::maybe_login_with_api_key;
 
 const DEFAULT_PROMPT: &str = "Reply with exactly the single word pong. Do not call tools. Do not read files. Do not run commands. Do not use markdown.";
 
@@ -21,97 +22,94 @@ async fn main() -> Result<(), AppError> {
         prompt.trim().to_string()
     };
 
-    let cwd = env::current_dir()?;
-    let codex_bin = read_env(CODEX_BIN_ENV).unwrap_or_else(|| "codex".to_string());
-    maybe_login_with_api_key(&codex_bin)?;
+    let config = AppConfig::from_env(env::current_dir()?);
+    login_with_api_key(&config)?;
 
-    let bridge = CodexAppServerBridge::new(BridgeOptions {
-        cwd: cwd.clone(),
-        codex_bin: codex_bin.clone(),
-        debug: read_bool_flag(DEBUG_ENV),
-        client_info: ClientInfo {
-            name: "codex_gateway_cli".to_string(),
-            title: "Codex Gateway CLI".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-        },
-        default_model: read_env(DEFAULT_MODEL_ENV),
-        activity_touch: std::sync::Arc::new(|| {}),
-    });
+    let client = CodexClient::spawn(SpawnOptions {
+        label: "cli".to_string(),
+        cwd: config.cwd.clone(),
+        codex_bin: config.codex_bin.clone(),
+        args: config.codex_app_server_args(),
+        env: config.codex_child_env(),
+        debug: config.debug,
+        client_info: config.client_info.clone(),
+    })?;
+    let mut events = client.subscribe();
 
-    let mut receiver = bridge.subscribe();
-    tokio::spawn(async move {
-        loop {
-            match receiver.recv().await {
-                Ok(BridgeEvent::Notification(message)) => {
-                    let method = message
-                        .get("method")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("notification");
-                    let params = message
-                        .get("params")
-                        .cloned()
-                        .unwrap_or_else(|| serde_json::json!({}));
-                    let suffix = params
-                        .get("item")
-                        .and_then(|item| item.get("type"))
-                        .and_then(serde_json::Value::as_str)
-                        .map(|value| format!(" {value}"))
-                        .or_else(|| {
-                            params
-                                .get("turn")
-                                .and_then(|turn| turn.get("status"))
-                                .and_then(serde_json::Value::as_str)
-                                .map(|value| format!(" {value}"))
-                        })
-                        .unwrap_or_default();
-                    println!("[notify] {method}{suffix}");
-                }
-                Ok(BridgeEvent::Warning(warning)) => {
-                    println!("[warn] {}", warning.message);
-                    if let Some(detail) = warning.detail {
-                        println!("{detail}");
-                    }
-                }
-                Ok(_) => {}
-                Err(_) => break,
-            }
+    client.initialize().await?;
+    println!("Initialized {} app-server", config.codex_bin);
+
+    let model = match config.default_model.clone() {
+        Some(model) => model,
+        None => {
+            let result = client
+                .request("model/list", json!({ "limit": 50, "includeHidden": false }))
+                .await?;
+            result
+                .pointer("/data/0/model")
+                .and_then(Value::as_str)
+                .map(ToString::to_string)
+                .ok_or_else(|| AppError::internal("model/list returned no models"))?
         }
-    });
+    };
 
-    let state = bridge.start().await?;
-    println!("Starting {codex_bin} app-server from {}", state.cwd);
-    println!("Initialized app-server");
-    println!(
-        "Runtime: {} / {}",
-        state
-            .runtime
-            .platform_family
-            .as_deref()
-            .unwrap_or("unknown"),
-        state.runtime.platform_os.as_deref().unwrap_or("unknown")
-    );
-    println!(
-        "Account: {} | requiresOpenaiAuth={:?}",
-        state.account.summary, state.account.requires_openai_auth
-    );
-    println!(
-        "Selected model: {}",
-        state.selected_model.as_deref().unwrap_or("unknown")
-    );
-    println!(
-        "Thread: {}",
-        state.thread_id.as_deref().unwrap_or("not started")
-    );
-    println!("Prompt: {prompt}");
+    let thread = client
+        .request("thread/start", json!({ "cwd": config.cwd, "model": model }))
+        .await?;
+    let thread_id = thread
+        .pointer("/thread/id")
+        .and_then(Value::as_str)
+        .ok_or_else(|| AppError::internal("thread/start did not return a thread id"))?
+        .to_string();
+    println!("Thread: {thread_id}\nModel: {model}\nPrompt: {prompt}");
 
-    bridge.send_prompt(&prompt).await?;
-    bridge
-        .wait_for_turn_completion(Duration::from_secs(120))
+    client
+        .request(
+            "turn/start",
+            json!({
+                "threadId": thread_id,
+                "input": [ { "type": "text", "text": prompt } ]
+            }),
+        )
         .await?;
 
-    println!("\nFinal agent text:\n");
-    println!("{}", bridge.get_latest_assistant_text());
+    let mut agent_text = String::new();
+    let wait = tokio::time::timeout(Duration::from_secs(120), async {
+        loop {
+            match events.recv().await {
+                Ok(CodexEvent::Notification(message)) => {
+                    let method = message.get("method").and_then(Value::as_str).unwrap_or("");
+                    println!("[notify] {method}");
+                    if method == "item/completed"
+                        && message.pointer("/params/item/type").and_then(Value::as_str)
+                            == Some("agentMessage")
+                        && let Some(text) =
+                            message.pointer("/params/item/text").and_then(Value::as_str)
+                    {
+                        agent_text = text.to_string();
+                    }
+                    if method == "turn/completed" {
+                        return Ok(());
+                    }
+                }
+                Ok(CodexEvent::Warning(warning)) => {
+                    println!("[warn] {}", warning.message);
+                }
+                Ok(CodexEvent::Exited { code }) => {
+                    return Err(AppError::internal(format!(
+                        "app-server exited before turn completion (code={code:?})"
+                    )));
+                }
+                Ok(_) => {}
+                Err(_) => return Err(AppError::ChannelClosed),
+            }
+        }
+    })
+    .await
+    .map_err(|_| AppError::internal("Timed out waiting for turn completion"))?;
+    wait?;
 
-    bridge.stop().await?;
+    println!("\nFinal agent text:\n\n{agent_text}");
+    client.stop().await;
     Ok(())
 }
