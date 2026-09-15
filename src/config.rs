@@ -138,14 +138,15 @@ fn langfuse_from_env() -> Option<LangfuseConfig> {
 }
 
 fn custom_provider_args(base_url: &str) -> Vec<String> {
-    const PROVIDER_ID: &str = "OpenAI";
+    const PROVIDER_ID: &str = "openai-custom";
+    const PROVIDER_NAME: &str = "OpenAI-compatible";
     let provider_path = format!("model_providers.{PROVIDER_ID}");
 
     vec![
         "-c".to_string(),
         format!("model_provider={}", toml_string(PROVIDER_ID)),
         "-c".to_string(),
-        format!("{provider_path}.name={}", toml_string(PROVIDER_ID)),
+        format!("{provider_path}.name={}", toml_string(PROVIDER_NAME)),
         "-c".to_string(),
         format!("{provider_path}.base_url={}", toml_string(base_url)),
         "-c".to_string(),
@@ -177,4 +178,109 @@ fn read_parsed<T: std::str::FromStr>(name: &str) -> Option<T> {
 
 fn read_positive(name: &str) -> Option<u64> {
     read_parsed::<u64>(name).filter(|value| *value > 0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn test_config(openai_api_key: Option<&str>, openai_base_url: Option<&str>) -> AppConfig {
+        AppConfig {
+            host: "127.0.0.1".to_string(),
+            port: 0,
+            cwd: PathBuf::from("."),
+            codex_bin: "codex".to_string(),
+            codex_home: None,
+            openai_api_key: openai_api_key.map(str::to_string),
+            openai_base_url: openai_base_url.map(str::to_string),
+            default_model: None,
+            debug: false,
+            max_sessions: 1,
+            session_ttl: Duration::from_secs(60),
+            session_sweep_interval: Duration::from_secs(60),
+            client_info: ClientInfo {
+                name: "config_test".to_string(),
+                title: "Config Test".to_string(),
+                version: "test".to_string(),
+            },
+            auth: None,
+            langfuse: None,
+        }
+    }
+
+    fn config_overrides(args: &[String]) -> Vec<&str> {
+        let mut values = Vec::new();
+        let mut iter = args.iter();
+        while let Some(arg) = iter.next() {
+            if arg == "-c"
+                && let Some(value) = iter.next()
+            {
+                values.push(value.as_str());
+            }
+        }
+        values
+    }
+
+    #[test]
+    fn custom_base_url_uses_compatible_provider_display_name() {
+        let config = test_config(
+            Some("sk-test"),
+            Some("https://example-openai-compatible-endpoint.test"),
+        );
+        let args = config.codex_config_args();
+        let overrides = config_overrides(&args);
+
+        assert!(overrides.contains(&r#"model_provider="openai-custom""#));
+        assert!(overrides.contains(&r#"model_providers.openai-custom.name="OpenAI-compatible""#));
+        assert!(
+            overrides.contains(&r#"model_providers.openai-custom.base_url="https://example-openai-compatible-endpoint.test""#)
+        );
+        assert!(overrides.contains(&r#"model_providers.openai-custom.wire_api="responses""#));
+        assert!(overrides.contains(&"model_providers.openai-custom.requires_openai_auth=true"));
+        assert!(overrides.contains(&"model_providers.openai-custom.supports_websockets=false"));
+        assert!(overrides.contains(&r#"forced_login_method="api""#));
+        assert!(!overrides.contains(&r#"model_provider="OpenAI""#));
+        assert!(!overrides.contains(&r#"model_providers.openai-custom.name="OpenAI""#));
+
+        let app_server_args = config.codex_app_server_args();
+        let app_server = config_overrides(&app_server_args);
+        assert!(app_server.contains(&r#"sandbox_mode="danger-full-access""#));
+        assert!(app_server.contains(&r#"approval_policy="never""#));
+    }
+
+    #[test]
+    fn true_openai_path_does_not_inject_custom_provider() {
+        let args = test_config(None, None).codex_config_args();
+        let overrides = config_overrides(&args);
+
+        assert!(args.is_empty());
+        assert!(
+            !overrides
+                .iter()
+                .any(|value| value.contains("model_providers."))
+        );
+        assert!(
+            !overrides
+                .iter()
+                .any(|value| value.starts_with("model_provider="))
+        );
+    }
+
+    #[test]
+    fn api_key_only_forces_api_login_without_custom_provider() {
+        let args = test_config(Some("sk-test"), None).codex_config_args();
+        let overrides = config_overrides(&args);
+
+        assert!(overrides.contains(&r#"forced_login_method="api""#));
+        assert!(
+            !overrides
+                .iter()
+                .any(|value| value.contains("model_providers."))
+        );
+        assert!(
+            !overrides
+                .iter()
+                .any(|value| value.starts_with("model_provider="))
+        );
+    }
 }
